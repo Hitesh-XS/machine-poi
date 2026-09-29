@@ -751,6 +751,7 @@ class SteeredLLM:
         top_p: float = 0.9,
         do_sample: bool = True,
         reasoning_mode: bool = False,
+        seed: Optional[int] = None,
         **kwargs,
     ) -> str:
         """
@@ -763,10 +764,17 @@ class SteeredLLM:
             top_p: Nucleus sampling probability
             do_sample: Whether to sample (vs greedy)
             reasoning_mode: Whether to enable native reasoning mode for supported models
+            seed: Seed torch's generators before decoding, for paired comparisons
 
         Returns:
             Generated text
         """
+        retrieval_options = sorted({"mra_mode", "use_domain_bridges"} & kwargs.keys())
+        if retrieval_options:
+            raise TypeError(
+                f"{', '.join(retrieval_options)}: retrieval options belong to "
+                "QuranSteerer.generate/compare; SteeredLLM.generate does not retrieve"
+            )
         if self.model is None:
             self.load_model()
 
@@ -837,10 +845,8 @@ class SteeredLLM:
         inputs = self.tokenizer(prompt, return_tensors="pt")
         inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
 
-        # Filter out custom kwargs that shouldn't go to model.generate()
-        custom_keys = ["mra_mode", "use_domain_bridges"]
-        filtered_kwargs = {k: v for k, v in kwargs.items() if k not in custom_keys}
-
+        if seed is not None:
+            torch.manual_seed(seed)
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
@@ -849,7 +855,7 @@ class SteeredLLM:
                 top_p=top_p,
                 do_sample=do_sample,
                 pad_token_id=self.tokenizer.pad_token_id,
-                **filtered_kwargs,
+                **kwargs,
             )
 
         # Decode only new tokens
@@ -869,20 +875,23 @@ class SteeredLLM:
         self,
         prompt: str,
         max_new_tokens: int = 100,
+        seed: Optional[int] = None,
         **kwargs,
     ) -> Tuple[str, str]:
         """
-        Compare outputs with and without steering.
+        Compare outputs with and without steering on the same prompt and seed.
 
         Returns:
             Tuple of (steered_output, unsteered_output)
         """
         # Generate with steering
-        steered = self.generate(prompt, max_new_tokens=max_new_tokens, **kwargs)
+        steered = self.generate(prompt, max_new_tokens=max_new_tokens, seed=seed, **kwargs)
 
         # Generate without steering
         with self.steering_disabled():
-            unsteered = self.generate(prompt, max_new_tokens=max_new_tokens, **kwargs)
+            unsteered = self.generate(
+                prompt, max_new_tokens=max_new_tokens, seed=seed, **kwargs
+            )
 
         return steered, unsteered
 

@@ -552,13 +552,9 @@ class TestGenerateAndCompare:
         assert generation_steerer.llm.generate.called
 
     def test_compare_returns_tuple(self, generation_steerer):
-        """Test that compare returns steered and baseline."""
-        # Mock the compare method directly since it's complex
-        generation_steerer.compare = Mock(return_value=("steered output", "baseline output"))
-        
+        """Test that compare returns steered and baseline outputs."""
         steered, baseline = generation_steerer.compare("Test prompt")
-        
+
         assert isinstance(steered, str)
         assert isinstance(baseline, str)
-        assert steered == "steered output"
-        assert baseline == "baseline output"
+        assert generation_steerer.llm.generate.call_count == 2

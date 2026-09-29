@@ -71,8 +71,8 @@ python main.py --llm qwen2.5-0.5b --coefficient 0.2 \
 This coefficient is an experimental setting, not a validated safe dose. For
 model-specific chat formatting, MRA/graph retrieval, dynamic steering opt-in,
 cache migration, and the complete CLI reference, use the
-[steering guide](docs/steering_guide.md). Some CLI comparison paths bypass
-retrieval; that guide identifies the working API paths.
+[steering guide](docs/steering_guide.md). Comparison modes give the steered and
+baseline runs the same retrieved context and random seed.
 
 Recent runtime changes serialize model use and hook mutation, restore temporary
 steering after failures, replace duplicate layer hooks, and correct clamp

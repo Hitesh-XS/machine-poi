@@ -334,7 +334,6 @@ def main():
             output = steerer.generate(
                 args.prompt, 
                 use_domain_bridges=True,
-                use_dynamic_steering=True,
                 mra_mode=args.mra,
                 reasoning_mode=args.reasoning,
                 max_new_tokens=args.max_tokens

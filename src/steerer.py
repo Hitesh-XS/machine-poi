@@ -1079,6 +1079,97 @@ class QuranSteerer:
             raise
         self._apply_steering()
 
+    def _mra_context(self, prompt: str, use_domain_bridges: bool):
+        """Retrieve multi-resolution context and build the MRA prompt.
+
+        Returns the final prompt and the raw retrieval results. Retrieval does
+        not depend on steering, so comparisons can reuse one prompt for both
+        arms.
+        """
+        if self.knowledge_base is None:
+            self.initialize_knowledge_base()
+
+        # 1. Generate Domain Bridges
+        bridge_queries: List[str] = []
+        if use_domain_bridges:
+            bridge_queries = self.generate_domain_bridges(prompt)
+
+        # 2. Retrieve Multi-Resolution Context
+        if bridge_queries:
+            results = self.knowledge_base.query_with_bridges(
+                original_query=prompt,
+                bridge_queries=bridge_queries,
+                n_results=3,
+                include_embeddings=False
+            )
+            logger.info(f"Domain Bridges Applied: {bridge_queries}")
+        else:
+            results = self.knowledge_base.query_multiresolution(
+                prompt,
+                n_results=3,
+                include_embeddings=False
+            )
+
+        # 3. Construct MRA Prompt
+        verses_txt = "\n".join([f"- {r['content']}" for r in results['verse']])
+        passages_txt = "\n".join([f"- {r['content']}" for r in results['passage']])
+        surahs_txt = "\n".join([f"- {r['content']}" for r in results['surah']])
+
+        verses_txt = quote_retrieval(verses_txt, "quran_db:verse")
+        passages_txt = quote_retrieval(passages_txt, "quran_db:passage")
+        surahs_txt = quote_retrieval(surahs_txt, "quran_db:surah")
+        bridges_section = ""
+        if bridge_queries:
+            bridges_section = f"**Domain Bridges**: {', '.join(bridge_queries)}\n\n"
+
+        final_prompt = (
+            f"### Quranic Multi-Resolution Context\n"
+            f"{bridges_section}"
+            f"**Micro (Verses):**\n{verses_txt}\n\n"
+            f"**Meso (Passages):**\n{passages_txt}\n\n"
+            f"**Macro (Surahs):**\n{surahs_txt}\n\n"
+            f"### Task\n{prompt}\n\n"
+            f"### Instruction\n"
+            f"Perform a Multi-Resolution Analysis (MRA) and Multidomain Analogy:\n"
+            f"1. **Micro Analysis**: How do the specific verses relate?\n"
+            f"2. **Theme Analysis**: How do the broader passage themes apply?\n"
+            f"3. **Multidomain Analogy**: Draw an analogy between these Quranic principles and the user's specific domain context.\n"
+            f"4. **Synthesis**: Provide a clear answer based on this deep thinking.\n\n"
+            f"### Response\n"
+        )
+        logger.info("MRA Context Injected")
+        return final_prompt, results
+
+    def _prepare_prompt(
+        self,
+        prompt: str,
+        mra_mode: bool,
+        use_domain_bridges: bool,
+        use_dynamic_steering: bool,
+        dynamic_blend_ratio: float,
+    ) -> str:
+        """Build the final prompt; call inside a steering session.
+
+        Dynamic steering mutates hooks, which the enclosing session restores.
+        """
+        if not mra_mode:
+            return prompt
+        final_prompt, results = self._mra_context(prompt, use_domain_bridges)
+        if use_dynamic_steering:
+            dynamic_vectors = self.compute_dynamic_steering(results)
+            if dynamic_vectors:
+                self.apply_dynamic_steering(dynamic_vectors, blend_ratio=dynamic_blend_ratio)
+                logger.info(f"Dynamic Steering Applied (blend={dynamic_blend_ratio})")
+        return final_prompt
+
+    def _check_generation_options(self, use_dynamic_steering, trusted_retrieval, dynamic_blend_ratio):
+        if use_dynamic_steering and not trusted_retrieval:
+            raise InvalidConfigError("Dynamic steering requires explicitly trusted retrieval")
+        self._ensure_llm_loaded()
+        if dynamic_blend_ratio is None:
+            dynamic_blend_ratio = STEERING_DEFAULTS.dynamic_blend_ratio
+        return dynamic_blend_ratio
+
     @serialized
     def generate(
         self,
@@ -1110,78 +1201,15 @@ class QuranSteerer:
         Returns:
             Generated text
         """
-        if use_dynamic_steering and not trusted_retrieval:
-            raise InvalidConfigError("Dynamic steering requires explicitly trusted retrieval")
-        self._ensure_llm_loaded()
-        
-        if dynamic_blend_ratio is None:
-            dynamic_blend_ratio = STEERING_DEFAULTS.dynamic_blend_ratio
+        dynamic_blend_ratio = self._check_generation_options(
+            use_dynamic_steering, trusted_retrieval, dynamic_blend_ratio
+        )
 
         self.last_run_diagnostics = {}
         with self.llm.steering_session():
-            final_prompt = prompt
-
-            if mra_mode:
-                if self.knowledge_base is None:
-                    self.initialize_knowledge_base()
-
-                # 1. Generate Domain Bridges
-                bridge_queries: List[str] = []
-                if use_domain_bridges:
-                    bridge_queries = self.generate_domain_bridges(prompt)
-
-                # 2. Retrieve Multi-Resolution Context
-                if bridge_queries:
-                    results = self.knowledge_base.query_with_bridges(
-                        original_query=prompt,
-                        bridge_queries=bridge_queries,
-                        n_results=3,
-                        include_embeddings=False
-                    )
-                    logger.info(f"Domain Bridges Applied: {bridge_queries}")
-                else:
-                    results = self.knowledge_base.query_multiresolution(
-                        prompt,
-                        n_results=3,
-                        include_embeddings=False
-                    )
-
-                # 3. Apply Dynamic Steering
-                if use_dynamic_steering:
-                    dynamic_vectors = self.compute_dynamic_steering(results)
-                    if dynamic_vectors:
-                        self.apply_dynamic_steering(dynamic_vectors, blend_ratio=dynamic_blend_ratio)
-                        logger.info(f"Dynamic Steering Applied (blend={dynamic_blend_ratio})")
-
-                # 4. Construct MRA Prompt
-                verses_txt = "\n".join([f"- {r['content']}" for r in results['verse']])
-                passages_txt = "\n".join([f"- {r['content']}" for r in results['passage']])
-                surahs_txt = "\n".join([f"- {r['content']}" for r in results['surah']])
-
-                verses_txt = quote_retrieval(verses_txt, "quran_db:verse")
-                passages_txt = quote_retrieval(passages_txt, "quran_db:passage")
-                surahs_txt = quote_retrieval(surahs_txt, "quran_db:surah")
-                bridges_section = ""
-                if bridge_queries:
-                    bridges_section = f"**Domain Bridges**: {', '.join(bridge_queries)}\n\n"
-
-                final_prompt = (
-                    f"### Quranic Multi-Resolution Context\n"
-                    f"{bridges_section}"
-                    f"**Micro (Verses):**\n{verses_txt}\n\n"
-                    f"**Meso (Passages):**\n{passages_txt}\n\n"
-                    f"**Macro (Surahs):**\n{surahs_txt}\n\n"
-                    f"### Task\n{prompt}\n\n"
-                    f"### Instruction\n"
-                    f"Perform a Multi-Resolution Analysis (MRA) and Multidomain Analogy:\n"
-                    f"1. **Micro Analysis**: How do the specific verses relate?\n"
-                    f"2. **Theme Analysis**: How do the broader passage themes apply?\n"
-                    f"3. **Multidomain Analogy**: Draw an analogy between these Quranic principles and the user's specific domain context.\n"
-                    f"4. **Synthesis**: Provide a clear answer based on this deep thinking.\n\n"
-                    f"### Response\n"
-                )
-                logger.info("MRA Context Injected")
-
+            final_prompt = self._prepare_prompt(
+                prompt, mra_mode, use_domain_bridges, use_dynamic_steering, dynamic_blend_ratio
+            )
             output = self.llm.generate(
                 prompt=final_prompt,
                 max_new_tokens=max_new_tokens,
@@ -1200,7 +1228,7 @@ class QuranSteerer:
         max_new_tokens: int = 100,
         **kwargs,
     ) -> str:
-        """Generate text without steering."""
+        """Generate text from the raw prompt without steering or retrieval."""
         self._ensure_llm_loaded()
         with self.llm.steering_disabled():
             return self.llm.generate(prompt, max_new_tokens=max_new_tokens, **kwargs)
@@ -1210,11 +1238,49 @@ class QuranSteerer:
         self,
         prompt: str,
         max_new_tokens: int = 100,
+        temperature: float = 0.7,
+        mra_mode: bool = False,
+        use_domain_bridges: bool = True,
+        use_dynamic_steering: bool = False,
+        trusted_retrieval: bool = False,
+        dynamic_blend_ratio: Optional[float] = None,
+        reasoning_mode: bool = False,
+        seed: Optional[int] = None,
         **kwargs,
     ) -> Tuple[str, str]:
-        """Compare steered vs unsteered outputs."""
-        self._ensure_llm_loaded()
-        return self.llm.compare_outputs(prompt, max_new_tokens=max_new_tokens, **kwargs)
+        """Compare steered vs unsteered outputs on identical inputs.
+
+        Retrieval runs once and both arms receive the same final prompt and
+        random seed, so differences come from steering rather than context or
+        sampling noise. ``seed`` defaults to ``STEERING_DEFAULTS.random_seed``.
+
+        Returns:
+            Tuple of (steered_output, unsteered_output)
+        """
+        dynamic_blend_ratio = self._check_generation_options(
+            use_dynamic_steering, trusted_retrieval, dynamic_blend_ratio
+        )
+        if seed is None:
+            seed = STEERING_DEFAULTS.random_seed
+        options = dict(
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            reasoning_mode=reasoning_mode,
+            seed=seed,
+            **kwargs,
+        )
+
+        self.last_run_diagnostics = {}
+        with self.llm.steering_session():
+            final_prompt = self._prepare_prompt(
+                prompt, mra_mode, use_domain_bridges, use_dynamic_steering, dynamic_blend_ratio
+            )
+            steered = self.llm.generate(prompt=final_prompt, **options)
+            # Read before the baseline pass overwrites captured activations.
+            self.last_run_diagnostics = self.llm.get_steering_diagnostics()
+            with self.llm.steering_disabled():
+                baseline = self.llm.generate(prompt=final_prompt, **options)
+        return steered, baseline
 
     def batch_compare(
         self,

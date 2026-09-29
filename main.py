@@ -248,6 +248,16 @@ def print_banner():
     """)
 
 
+def generation_options(args) -> dict:
+    """Generation settings shared by every CLI mode."""
+    return {
+        "max_new_tokens": args.max_tokens,
+        "temperature": args.temperature,
+        "mra_mode": args.mra,
+        "reasoning_mode": args.reasoning,
+    }
+
+
 def run_interactive(steerer: QuranSteerer, args):
     """Run interactive chat mode."""
     print("\n=== Interactive Mode ===")
@@ -294,31 +304,14 @@ def run_interactive(steerer: QuranSteerer, args):
 
         # Generate response
         if compare_mode:
+            steered, baseline = steerer.compare(prompt, **generation_options(args))
             print("\n--- Steered Output ---")
-            steered = steerer.generate(
-                prompt, 
-                max_new_tokens=args.max_tokens, 
-                mra_mode=args.mra,
-                reasoning_mode=args.reasoning
-            )
             print(steered)
-
             print("\n--- Baseline Output ---")
-            baseline = steerer.generate_unsteered(
-                prompt, 
-                max_new_tokens=args.max_tokens,
-                reasoning_mode=args.reasoning
-            )
             print(baseline)
         else:
             print("\n--- Output ---")
-            output = steerer.generate(
-                prompt, 
-                max_new_tokens=args.max_tokens, 
-                mra_mode=args.mra,
-                reasoning_mode=args.reasoning
-            )
-            print(output)
+            print(steerer.generate(prompt, **generation_options(args)))
 
 
 def run_comparison(steerer: QuranSteerer, args):
@@ -329,11 +322,7 @@ def run_comparison(steerer: QuranSteerer, args):
         print(f"[{i}/{len(TEST_PROMPTS)}] {prompt}")
         print("-" * 60)
 
-        steered, baseline = steerer.compare(
-            prompt, 
-            max_new_tokens=args.max_tokens,
-            reasoning_mode=args.reasoning
-        )
+        steered, baseline = steerer.compare(prompt, **generation_options(args))
 
         print("STEERED:")
         print(steered[:300] + "..." if len(steered) > 300 else steered)
@@ -350,12 +339,7 @@ def run_single_prompt(steerer: QuranSteerer, prompt: str, args):
     print(f"\nPrompt: {prompt}\n")
     print("-" * 60)
 
-    steered, baseline = steerer.compare(
-        prompt,
-        max_new_tokens=args.max_tokens,
-        mra_mode=args.mra,
-        reasoning_mode=args.reasoning,
-    )
+    steered, baseline = steerer.compare(prompt, **generation_options(args))
 
     print("STEERED OUTPUT:")
     print(steered)
@@ -483,36 +467,11 @@ def main():
     elif args.compare:
         run_comparison(steerer, args)
     elif args.prompt:
-        # Note: run_single_prompt uses compare which calls compare_outputs which loops generate
-        # We need to update run_single_prompt to pass mra_mode if we want it there
-        # But for now, let's just make sure compare handles kwargs
-        # steerer.compare calls llm.compare_outputs which calls generate(..., **kwargs)
-        # So passing mra_mode=args.mra should work if we pass it to compare
-        steered, baseline = steerer.compare(
-            args.prompt, 
-            max_new_tokens=args.max_tokens, 
-            mra_mode=args.mra,
-            reasoning_mode=args.reasoning
-        )
-        print("STEERED OUTPUT:")
-        print(steered)
-        print()
-        print("BASELINE OUTPUT:")
-        print(baseline)
+        run_single_prompt(steerer, args.prompt, args)
     else:
-        # Default: run a demo prompt
-        demo_prompt = "What is the meaning of life and how should we live?"
-        # run_single_prompt(steerer, demo_prompt, args) 
-        # Inline run_single_prompt logic to pass mra_mode easily:
-        print(f"\nPrompt: {demo_prompt}\n")
-        steered, baseline = steerer.compare(
-            demo_prompt, 
-            max_new_tokens=args.max_tokens, 
-            mra_mode=args.mra,
-            reasoning_mode=args.reasoning
+        run_single_prompt(
+            steerer, "What is the meaning of life and how should we live?", args
         )
-        print("STEERED OUTPUT:")
-        print(steered)
 
         print("\n" + "=" * 60)
         print("Try other modes:")
