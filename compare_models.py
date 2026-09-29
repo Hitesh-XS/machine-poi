@@ -117,21 +117,9 @@ def list_models():
     print(f"{'Model Name':<20} {'Reasoning Mode':<15} {'Description'}")
     print("-" * 70)
 
-    reasoning_info = {
-        "deepseek-r1-1.5b": ("deepseek", "Uses <think>...</think> blocks"),
-        "phi4-mini": ("phi", "Math reasoning, no special tokens"),
-        "qwen3-0.6b": ("qwen3", "Native enable_thinking in template"),
-        "smollm3": (None, "No native reasoning"),
-        "gemma-270m": (None, "No native reasoning"),
-        "qwen2.5-0.5b": (None, "Standard instruct model"),
-        "smollm2-135m": (None, "Compact model, no reasoning"),
-        "smollm2-360m": (None, "Compact model, no reasoning"),
-    }
-
-    for model_name in LLM_MODELS.keys():
-        mode, desc = reasoning_info.get(model_name, (None, "Unknown"))
-        mode_str = mode if mode else "none"
-        print(f"{model_name:<20} {mode_str:<15} {desc}")
+    for model_name, spec in LLM_MODELS.items():
+        mode = spec.get("reasoning", {}).get("mode", "none")
+        print(f"{model_name:<20} {mode:<15} {spec.get('description', '')}")
 
     print("-" * 70)
     print("Use --reasoning to enable native reasoning modes.\n")

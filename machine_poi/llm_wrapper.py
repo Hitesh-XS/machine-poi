@@ -23,58 +23,22 @@ from transformers import (
 )
 from contextlib import contextmanager
 
+from .config import LLM_MODELS
+
 
 # Setup module logger
 logger = logging.getLogger("machine_poi.llm_wrapper")
 
 
 
-# Model configurations for supported architectures
-MODEL_CONFIGS = {
-    "deepseek": {
-        "layer_name_pattern": "model.layers.{layer_idx}",
-        "hidden_size_attr": "hidden_size",
-        "num_layers_attr": "num_hidden_layers",
-        "residual_stream": "post_attention_layernorm",  # Where to inject
-    },
-    "qwen": {
-        "layer_name_pattern": "model.layers.{layer_idx}",
-        "hidden_size_attr": "hidden_size",
-        "num_layers_attr": "num_hidden_layers",
-        "residual_stream": "post_attention_layernorm",
-    },
-    "phi": {
-        "layer_name_pattern": "model.layers.{layer_idx}",
-        "hidden_size_attr": "hidden_size",
-        "num_layers_attr": "num_hidden_layers",
-        "residual_stream": "post_attention_layernorm",
-    },
-    "gemma": {
-        "layer_name_pattern": "model.layers.{layer_idx}",
-        "hidden_size_attr": "hidden_size",
-        "num_layers_attr": "num_hidden_layers",
-        "residual_stream": "post_attention_layernorm",
-    },
-    "smollm": {
-        "layer_name_pattern": "model.layers.{layer_idx}",
-        "hidden_size_attr": "hidden_size",
-        "num_layers_attr": "num_hidden_layers",
-        "residual_stream": "post_attention_layernorm",
-    },
-    "llama": {
-        "layer_name_pattern": "model.layers.{layer_idx}",
-        "hidden_size_attr": "hidden_size",
-        "num_layers_attr": "num_hidden_layers",
-        "residual_stream": "post_attention_layernorm",
-    },
-    "mistral": {
-        "layer_name_pattern": "model.layers.{layer_idx}",
-        "hidden_size_attr": "hidden_size",
-        "num_layers_attr": "num_hidden_layers",
-        "residual_stream": "post_attention_layernorm",
-    },
+# Every supported architecture exposes decoder layers at model.layers.N with
+# hidden_size/num_hidden_layers on its (text) config. _get_layer_module also
+# tries the paths multimodal wrappers such as Gemma 4 use.
+DECODER_LAYOUT = {
+    "layer_name_pattern": "model.layers.{layer_idx}",
+    "hidden_size_attr": "hidden_size",
+    "num_layers_attr": "num_hidden_layers",
 }
-
 
 
 class LLMWrapperError(Exception):
@@ -93,15 +57,8 @@ class ModelNotLoadedError(LLMWrapperError):
 
 
 def get_model_config(model_name: str) -> Dict[str, Any]:
-    """Get configuration for a model architecture."""
-    model_name_lower = model_name.lower()
-
-    for key in MODEL_CONFIGS:
-        if key in model_name_lower:
-            return MODEL_CONFIGS[key]
-
-    # Default to llama-like architecture
-    return MODEL_CONFIGS["llama"]
+    """Return the decoder layout; all supported architectures share it."""
+    return dict(DECODER_LAYOUT)
 
 
 def kv_share_source_map(
@@ -251,47 +208,16 @@ class SteeredLLM:
     """
     Wraps a HuggingFace LLM to enable activation steering.
 
-    Supports:
-    - DeepSeek-R1-Distill-Qwen-1.5B
-    - Microsoft Phi-4-mini-reasoning
-    - Qwen3-0.6B
-    - SmolLM3
-    - Gemma 3 270M
+    Registered aliases, checkpoints and reasoning settings come from
+    ``machine_poi.config.LLM_MODELS``; any other Hugging Face path also works
+    if it uses a supported decoder layout.
     """
 
-    SUPPORTED_MODELS = {
-        "deepseek-r1-1.5b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
-        "phi4-mini": "microsoft/Phi-4-mini-reasoning",
-        "qwen3-0.6b": "Qwen/Qwen3-0.6B",
-        "smollm3": "HuggingFaceTB/SmolLM3-3B",
-        "gemma-270m": "google/gemma-3-270m-it",
-        # Fallbacks/alternatives
-        "qwen2.5-0.5b": "Qwen/Qwen2.5-0.5B-Instruct",
-        "smollm2-135m": "HuggingFaceTB/SmolLM2-135M-Instruct",
-        "smollm2-360m": "HuggingFaceTB/SmolLM2-360M-Instruct",
-    }
-
-    # Model reasoning configurations (from official documentation)
+    SUPPORTED_MODELS = {alias: spec["hf_path"] for alias, spec in LLM_MODELS.items()}
     REASONING_CONFIGS = {
-        "deepseek-r1-1.5b": {
-            "mode": "deepseek",  # Uses <think>...</think> blocks
-            "temperature": 0.6,
-            "top_p": 0.95,
-            "force_think_prefix": True,  # Enforce <think>\n at start
-        },
-        "phi4-mini": {
-            "mode": "phi",  # Math-focused, no special tokens
-            "temperature": 0.8,
-            "top_p": 0.95,
-            "force_think_prefix": False,
-        },
-        "qwen3-0.6b": {
-            "mode": "qwen3",  # Native enable_thinking in chat template
-            "temperature": 0.6,
-            "top_p": 0.95,
-            "top_k": 20,
-            "force_think_prefix": False,  # Handled by tokenizer
-        },
+        alias: dict(spec["reasoning"])
+        for alias, spec in LLM_MODELS.items()
+        if "reasoning" in spec
     }
 
     def __init__(

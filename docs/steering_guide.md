@@ -236,7 +236,10 @@ baseline.
 
 These are the repository's convenience mappings, not a current compatibility or
 quality certification for every checkpoint/dependency combination. Custom paths
-also require a supported model layout and sufficient memory.
+also require a supported model layout and sufficient memory. `LLM_MODELS` and
+`EMBEDDING_MODELS` in `machine_poi/config.py` are the only registries; the CLI,
+`SteeredLLM`, `QuranEmbeddings` and `compare_models.py` read them. Hidden size and
+layer count come from the loaded checkpoint.
 
 | LLM alias | Checkpoint |
 | --- | --- |
@@ -245,6 +248,8 @@ also require a supported model layout and sufficient memory.
 | `qwen3-0.6b` | `Qwen/Qwen3-0.6B` |
 | `smollm3` | `HuggingFaceTB/SmolLM3-3B` |
 | `gemma-270m` | `google/gemma-3-270m-it` |
+| `gemma-4-e2b` | `google/gemma-4-E2B-it` (no recommended dose; uses the preset) |
+| `gemma-4-e4b` | `google/gemma-4-E4B-it` (no recommended dose; uses the preset) |
 | `qwen2.5-0.5b` | `Qwen/Qwen2.5-0.5B-Instruct` |
 | `smollm2-135m` | `HuggingFaceTB/SmolLM2-135M-Instruct` |
 | `smollm2-360m` | `HuggingFaceTB/SmolLM2-360M-Instruct` |

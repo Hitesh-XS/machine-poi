@@ -50,17 +50,22 @@ logger = logging.getLogger("machine_poi")
 # Type Definitions
 # =============================================================================
 
+class ReasoningConfig(TypedDict, total=False):
+    """Native reasoning settings, following each model's documentation."""
+    mode: str  # "deepseek", "phi" or "qwen3"
+    temperature: float
+    top_p: float
+    top_k: int
+    force_think_prefix: bool
+
+
 class LLMModelConfig(TypedDict, total=False):
-    """Type definition for LLM model configuration."""
+    """One registered LLM. Dimensions are read from the loaded checkpoint."""
     hf_path: str
-    hidden_size: int
-    num_layers: int
+    description: str
     recommended_layers: List[int]
     recommended_coefficient: float
-    reasoning_mode: Optional[str]
-    reasoning_temperature: float
-    reasoning_top_p: float
-    reasoning_top_k: int
+    reasoning: ReasoningConfig
 
 
 class EmbeddingModelConfig(TypedDict):
@@ -97,86 +102,79 @@ class QuranEmbeddingsResult(TypedDict):
     chunk_by: str
 
 
-# Supported LLM models with their configurations
-LLM_MODELS = {
-    # Primary targets (small, efficient models)
+# The single LLM registry, used by the CLI, SteeredLLM and the experiments.
+# Recommended coefficients and layers are starting points, not validated doses;
+# models without them fall back to the "moderate" preset.
+LLM_MODELS: Dict[str, LLMModelConfig] = {
     "deepseek-r1-1.5b": {
         "hf_path": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
-        "hidden_size": 1536,
-        "num_layers": 28,
+        "description": "Reasoning distill; thinks in <think>...</think> blocks",
         "recommended_layers": list(range(10, 20)),
         "recommended_coefficient": 0.4,
-        # Native reasoning mode: uses <think>...</think> blocks
-        "reasoning_mode": "deepseek",
-        "reasoning_temperature": 0.6,
-        "reasoning_top_p": 0.95,
+        "reasoning": {
+            "mode": "deepseek",
+            "temperature": 0.6,
+            "top_p": 0.95,
+            "force_think_prefix": True,  # Start the response with <think>
+        },
     },
     "phi4-mini": {
         "hf_path": "microsoft/Phi-4-mini-reasoning",
-        "hidden_size": 3072,
-        "num_layers": 32,
+        "description": "Math reasoning, no special tokens",
         "recommended_layers": list(range(12, 24)),
         "recommended_coefficient": 0.3,
-        # Built for math reasoning, no special tokens
-        "reasoning_mode": "phi",
-        "reasoning_temperature": 0.8,
-        "reasoning_top_p": 0.95,
+        "reasoning": {"mode": "phi", "temperature": 0.8, "top_p": 0.95},
     },
     "qwen3-0.6b": {
         "hf_path": "Qwen/Qwen3-0.6B",
-        "hidden_size": 1024,
-        "num_layers": 28,
+        "description": "Native thinking via enable_thinking in the chat template",
         "recommended_layers": list(range(10, 20)),
         "recommended_coefficient": 0.5,
-        # Native thinking mode: uses enable_thinking=True in chat template
-        "reasoning_mode": "qwen3",
-        "reasoning_temperature": 0.6,
-        "reasoning_top_p": 0.95,
-        "reasoning_top_k": 20,
+        "reasoning": {"mode": "qwen3", "temperature": 0.6, "top_p": 0.95, "top_k": 20},
     },
     "smollm3": {
         "hf_path": "HuggingFaceTB/SmolLM3-3B",
-        "hidden_size": 2560,
-        "num_layers": 32,
+        "description": "No native reasoning mode",
         "recommended_layers": list(range(12, 24)),
         "recommended_coefficient": 0.35,
-        "reasoning_mode": None,  # No native reasoning
     },
     "gemma-270m": {
         "hf_path": "google/gemma-3-270m-it",
-        "hidden_size": 1024,
-        "num_layers": 18,
+        "description": "No native reasoning mode; gated on Hugging Face",
         "recommended_layers": list(range(6, 14)),
         "recommended_coefficient": 0.5,
-        "reasoning_mode": None,  # No native reasoning
+    },
+    "gemma-4-e2b": {
+        "hf_path": "google/gemma-4-E2B-it",
+        "description": "Multimodal Gemma 4 used in experiments/results; no calibrated default dose",
+    },
+    "gemma-4-e4b": {
+        "hf_path": "google/gemma-4-E4B-it",
+        "description": "Multimodal Gemma 4 used in experiments/results; no calibrated default dose",
     },
     # Fallback models (more widely available)
     "qwen2.5-0.5b": {
         "hf_path": "Qwen/Qwen2.5-0.5B-Instruct",
-        "hidden_size": 896,
-        "num_layers": 24,
+        "description": "Standard instruct model",
         "recommended_layers": list(range(8, 18)),
         "recommended_coefficient": 0.5,
-        "reasoning_mode": None,  # Standard instruct model
     },
     "smollm2-135m": {
         "hf_path": "HuggingFaceTB/SmolLM2-135M-Instruct",
-        "hidden_size": 576,
-        "num_layers": 30,
+        "description": "Compact instruct model",
         "recommended_layers": list(range(10, 22)),
         "recommended_coefficient": 0.6,
     },
     "smollm2-360m": {
         "hf_path": "HuggingFaceTB/SmolLM2-360M-Instruct",
-        "hidden_size": 960,
-        "num_layers": 32,
+        "description": "Compact instruct model",
         "recommended_layers": list(range(12, 24)),
         "recommended_coefficient": 0.5,
     },
 }
 
-# Supported embedding models
-EMBEDDING_MODELS = {
+# The single embedding registry; QuranEmbeddings resolves aliases from it.
+EMBEDDING_MODELS: Dict[str, EmbeddingModelConfig] = {
     "bge-m3": {
         "hf_path": "BAAI/bge-m3",
         "embedding_dim": 1024,

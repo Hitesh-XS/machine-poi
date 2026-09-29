@@ -10,7 +10,7 @@ import pytest
 import torch
 from torch import nn
 
-from machine_poi.llm_wrapper import MODEL_CONFIGS, ActivationHook, SteeredLLM
+from machine_poi.llm_wrapper import DECODER_LAYOUT, ActivationHook, SteeredLLM
 from machine_poi.knowledge_base import QuranKnowledgeBase
 from machine_poi.steerer import InvalidConfigError, QuranSteerer, SteeringConfig
 from machine_poi.steering_cache import load_vectors, save_vectors
@@ -34,7 +34,7 @@ def tiny_llm():
 
     llm = SteeredLLM(device="cpu")
     llm.model = Tiny()
-    llm.config = MODEL_CONFIGS["llama"]
+    llm.config = DECODER_LAYOUT
     llm.tokenizer = lambda text, return_tensors: {"input_ids": torch.tensor([[1]])}
     return llm
 

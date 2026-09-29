@@ -498,7 +498,7 @@ class TestKvSharedLayerDiagnostics:
         """SteeredLLM over a tiny two-layer model whose layer 1 has no v_proj."""
         from types import SimpleNamespace
 
-        from machine_poi.llm_wrapper import MODEL_CONFIGS, SteeredLLM
+        from machine_poi.llm_wrapper import DECODER_LAYOUT, SteeredLLM
 
         torch.manual_seed(0)
 
@@ -545,7 +545,7 @@ class TestKvSharedLayerDiagnostics:
 
         llm = SteeredLLM(device="cpu")
         llm.model = TinyModel()
-        llm.config = MODEL_CONFIGS["llama"]
+        llm.config = DECODER_LAYOUT
         llm.hooks = {}
         llm.hook_handles = []
 
