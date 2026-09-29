@@ -270,6 +270,8 @@ class SteeredLLM:
         self.tokenizer: Optional[PreTrainedTokenizer] = None
         self.config = None
         self.hooks: Dict[int, ActivationHook] = {}
+        # Effective decoding settings of the latest generate call.
+        self.last_generation_settings: Dict[str, Any] = {}
         self.hook_handles: List = []
 
     @synchronized
@@ -778,16 +780,27 @@ class SteeredLLM:
         inputs = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=not templated)
         inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
 
+        # Sampling parameters only apply when sampling; greedy decoding
+        # ignores them and transformers warns if they are passed.
+        sampling = {"temperature": temperature, "top_p": top_p} if do_sample else {}
+        self.last_generation_settings = {
+            "max_new_tokens": max_new_tokens,
+            "do_sample": do_sample,
+            "seed": seed,
+            "reasoning_mode": reasoning_mode,
+            "chat_template": templated,
+            **sampling,
+            **{key: kwargs[key] for key in ("top_k",) if key in kwargs},
+        }
         if seed is not None:
             torch.manual_seed(seed)
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
                 do_sample=do_sample,
                 pad_token_id=self.tokenizer.pad_token_id,
+                **sampling,
                 **kwargs,
             )
 

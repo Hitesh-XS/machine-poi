@@ -15,7 +15,7 @@ import torch
 import numpy as np
 from pathlib import Path
 from typing import Optional, Dict, List, Union, Tuple, Literal, Any
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from .quran_embeddings import QuranEmbeddings
 from .steering_vectors import SteeringVectorExtractor, ContrastiveSteeringExtractor
@@ -247,6 +247,7 @@ class QuranSteerer:
         self.steering_vectors: Optional[Dict[int, torch.Tensor]] = None
         self.config = SteeringConfig()
         self.last_run_diagnostics = {}
+        self.last_run_settings = {}
         
         logger.debug(f"Initialized QuranSteerer with model={llm_model}, device={self.device}")
 
@@ -510,6 +511,7 @@ class QuranSteerer:
     def _generate_graph_result(self, prompt, result, max_new_tokens,
                                temperature, use_dynamic_steering, **kwargs):
         self.last_run_diagnostics = {}
+        self.last_run_settings = {}
         with self.llm.steering_session():
             # Apply dynamic steering from vector results
             if use_dynamic_steering and result.vector_results:
@@ -553,6 +555,7 @@ class QuranSteerer:
             )
 
             self.last_run_diagnostics = self.llm.get_steering_diagnostics()
+            self._record_settings(final_prompt, "graph")
             return output
 
     @serialized
@@ -1156,6 +1159,16 @@ class QuranSteerer:
                 logger.info(f"Dynamic Steering Applied (blend={dynamic_blend_ratio})")
         return final_prompt
 
+    def _record_settings(self, final_prompt: str, retrieval: str) -> None:
+        """Keep the settings a run actually used, to report next to its outputs."""
+        decoding = getattr(self.llm, "last_generation_settings", None)
+        self.last_run_settings = {
+            **(decoding if isinstance(decoding, dict) else {}),
+            "retrieval": retrieval,
+            "prompt_sha256": hashlib.sha256(final_prompt.encode()).hexdigest(),
+            "steering": asdict(self.config),
+        }
+
     def _check_generation_options(self, use_dynamic_steering, trusted_retrieval, dynamic_blend_ratio):
         if use_dynamic_steering and not trusted_retrieval:
             raise InvalidConfigError("Dynamic steering requires explicitly trusted retrieval")
@@ -1200,6 +1213,7 @@ class QuranSteerer:
         )
 
         self.last_run_diagnostics = {}
+        self.last_run_settings = {}
         with self.llm.steering_session():
             final_prompt = self._prepare_prompt(
                 prompt, mra_mode, use_domain_bridges, use_dynamic_steering, dynamic_blend_ratio
@@ -1213,6 +1227,7 @@ class QuranSteerer:
             )
 
             self.last_run_diagnostics = self.llm.get_steering_diagnostics()
+            self._record_settings(final_prompt, "mra" if mra_mode else "none")
             return output
 
     @serialized
@@ -1265,6 +1280,7 @@ class QuranSteerer:
         )
 
         self.last_run_diagnostics = {}
+        self.last_run_settings = {}
         with self.llm.steering_session():
             final_prompt = self._prepare_prompt(
                 prompt, mra_mode, use_domain_bridges, use_dynamic_steering, dynamic_blend_ratio
@@ -1274,6 +1290,7 @@ class QuranSteerer:
             self.last_run_diagnostics = self.llm.get_steering_diagnostics()
             with self.llm.steering_disabled():
                 baseline = self.llm.generate(prompt=final_prompt, **options)
+            self._record_settings(final_prompt, "mra" if mra_mode else "none")
         return steered, baseline
 
     def batch_compare(

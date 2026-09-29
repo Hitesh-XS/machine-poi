@@ -172,6 +172,10 @@ outputs from the same final prompt and random seed (`seed` defaults to
 the steered run's scalar summaries in `last_run_diagnostics`. It does not assemble
 graph context; use `generate_with_graph` for that. `SteeredLLM.generate` raises
 `TypeError` for retrieval options such as `mra_mode` instead of ignoring them.
+`last_run_settings` records what the latest `generate`, `compare` or graph run
+actually used: seed, greedy or sampling (with the effective temperature, which
+reasoning mode can override), chat templating, retrieval, a SHA-256 of the final
+prompt and the steering configuration. Record it next to any output you report.
 
 ## Model loading and cache migration
 
@@ -223,6 +227,7 @@ configures the graph provider and enables graph index building with
 | `--quran-path`, `--cache-dir` | Corpus and steering-cache paths |
 | `--device`, `--quantize` | Device (`cpu`, `cuda`, `mps`) and optional `4bit`/`8bit` loading |
 | `--max-tokens`, `--temperature` | Generation options, forwarded on every CLI path |
+| `--seed`, `--greedy` | Seed shared by both comparison arms (default 42); decode greedily instead of sampling. Comparisons print the settings used |
 | `--interactive`, `--compare`, `--prompt` | Interactive generation, predefined comparisons, or one comparison prompt |
 | `--reasoning` | Model-specific prompt/decoding behavior; inspect it when matching experimental conditions |
 | `--init-db`, `--mra` | Build vector index; add MRA context on every generation path |

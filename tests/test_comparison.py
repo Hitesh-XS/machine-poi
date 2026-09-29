@@ -99,7 +99,9 @@ def test_seeded_comparison_arms_share_sampling_noise():
 
 @pytest.mark.parametrize("mode", ["prompt", "interactive"])
 def test_cli_comparisons_pass_retrieval_and_sampling_options(mode, monkeypatch):
-    args = SimpleNamespace(max_tokens=12, temperature=0.2, mra=True, reasoning=False)
+    args = SimpleNamespace(
+        max_tokens=12, temperature=0.2, mra=True, reasoning=False, seed=7, greedy=True
+    )
     steerer = Mock()
     steerer.compare.return_value = ("s", "b")
     if mode == "prompt":
@@ -109,6 +111,56 @@ def test_cli_comparisons_pass_retrieval_and_sampling_options(mode, monkeypatch):
         monkeypatch.setattr("builtins.input", lambda _: next(inputs))
         cli.run_interactive(steerer, args)
     steerer.compare.assert_called_once_with(
-        "q", max_new_tokens=12, temperature=0.2, mra_mode=True, reasoning_mode=False
+        "q",
+        max_new_tokens=12,
+        temperature=0.2,
+        mra_mode=True,
+        reasoning_mode=False,
+        seed=7,
+        do_sample=False,
     )
     steerer.generate_unsteered.assert_not_called()
+
+
+class RecordingModel(SamplingModel):
+    def __init__(self):
+        self.calls = []
+
+    def generate(self, input_ids, **kwargs):
+        self.calls.append(kwargs)
+        return super().generate(input_ids, **kwargs)
+
+
+@pytest.mark.parametrize("do_sample", [True, False])
+def test_sampling_parameters_only_reach_the_model_when_sampling(do_sample):
+    llm = fake_llm()
+    llm.model = RecordingModel()
+    llm.generate("prompt", do_sample=do_sample, temperature=0.3, seed=5)
+    sent = llm.model.calls[0]
+    assert ("temperature" in sent) is do_sample and ("top_p" in sent) is do_sample
+    assert llm.last_generation_settings["do_sample"] is do_sample
+    assert ("temperature" in llm.last_generation_settings) is do_sample
+    assert llm.last_generation_settings["seed"] == 5
+
+
+def test_recorded_settings_are_the_effective_reasoning_values():
+    llm = SteeredLLM("deepseek-r1-1.5b", device="cpu")
+    llm.model = RecordingModel()
+    llm.tokenizer = FakeTokenizer()
+    llm.generate("prompt", temperature=0.9, do_sample=False, reasoning_mode=True)
+    assert llm.last_generation_settings["temperature"] == 0.6
+    assert llm.last_generation_settings["do_sample"] is True
+
+
+def test_compare_records_the_settings_both_arms_used(capsys):
+    steerer = QuranSteerer(device="cpu")
+    steerer.llm = fake_llm()
+    steerer.config.coefficient = 0.3
+    steerer.compare("What is truth?", do_sample=False, seed=11)
+    settings = steerer.last_run_settings
+    assert settings["seed"] == 11 and settings["do_sample"] is False
+    assert settings["retrieval"] == "none" and settings["steering"]["coefficient"] == 0.3
+    assert len(settings["prompt_sha256"]) == 64
+
+    cli.print_settings(steerer)
+    assert "[seed 11, greedy, retrieval none, coefficient 0.3" in capsys.readouterr().out

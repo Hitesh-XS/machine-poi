@@ -153,7 +153,18 @@ Examples:
         "--temperature",
         type=float,
         default=0.7,
-        help="Sampling temperature",
+        help="Sampling temperature (ignored with --greedy)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed shared by both comparison arms (default: 42)",
+    )
+    parser.add_argument(
+        "--greedy",
+        action="store_true",
+        help="Decode greedily instead of sampling",
     )
 
     # Mode
@@ -295,7 +306,27 @@ def generation_options(args) -> dict:
         "temperature": args.temperature,
         "mra_mode": args.mra,
         "reasoning_mode": args.reasoning,
+        "seed": args.seed,
+        "do_sample": not args.greedy,
     }
+
+
+def print_settings(steerer: QuranSteerer) -> None:
+    """Print the decoding and steering settings the last run used."""
+    settings = steerer.last_run_settings
+    if not isinstance(settings, dict) or not settings:
+        return
+    decoding = (
+        f"temperature {settings.get('temperature')}"
+        if settings.get("do_sample")
+        else "greedy"
+    )
+    steering = settings.get("steering", {})
+    print(
+        f"[seed {settings.get('seed')}, {decoding}, retrieval {settings.get('retrieval')}, "
+        f"coefficient {steering.get('coefficient')}, mode {steering.get('injection_mode')}, "
+        f"chat template {settings.get('chat_template')}]"
+    )
 
 
 def run_interactive(steerer: QuranSteerer, args):
@@ -351,6 +382,7 @@ def run_interactive(steerer: QuranSteerer, args):
             print(steered)
             print("\n--- Baseline Output ---")
             print(baseline)
+            print_settings(steerer)
         else:
             print("\n--- Output ---")
             print(steerer.generate(prompt, **generation_options(args)))
@@ -371,6 +403,7 @@ def run_comparison(steerer: QuranSteerer, args):
         print()
         print("BASELINE:")
         print(baseline[:300] + "..." if len(baseline) > 300 else baseline)
+        print_settings(steerer)
         print()
         print("=" * 60)
         print()
@@ -388,6 +421,7 @@ def run_single_prompt(steerer: QuranSteerer, prompt: str, args):
     print()
     print("BASELINE OUTPUT:")
     print(baseline)
+    print_settings(steerer)
 
 
 def main():
