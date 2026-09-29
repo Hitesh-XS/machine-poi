@@ -44,3 +44,6 @@ quran_db/
 # Cached vectors
 vectors/
 *.npz
+
+# Evaluation harness working files (vector index, dataset cache)
+.eval_work/

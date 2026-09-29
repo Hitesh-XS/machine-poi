@@ -95,3 +95,11 @@ def test_cache_records_the_recipe_and_rejects_older_formats(steerer, tmp_path, c
     assert "predates format 3" in caplog.text
     assert len(steerer.pooled_batches) == 2
     torch.testing.assert_close(vectors[0], CENTERED)
+
+
+def test_english_control_is_available_for_comparison(steerer):
+    english = set(neutral_texts("en"))
+    steerer.prepare_quran_steering(sample_size=5, control="en")
+    assert set(steerer.pooled_batches[1]) == english
+    with pytest.raises(ValueError, match="fr"):
+        steerer.prepare_quran_steering(sample_size=5, control="fr")

@@ -108,6 +108,7 @@ across restarts or replicas. Details are in the [guardian guide](guardian_integr
 | `GraphBridgeGenerator`, domain bridge helpers | Expand queries through static themes, graph relations or embedding similarity |
 | `steering_cache`, `retrieval_context` | Validate numeric artifacts and quote/bound external context |
 | `workspace_diagnostics`, `transport_stats` | Inspect interventions and summarize experimental comparisons |
+| `evaluation`, `experiments/steering_eval.py` | Score steering conditions on held-out prompts with intervals and provenance ([evaluation guide](evaluation.md)) |
 
 A high-level steerer serializes synchronous operations. A model wrapper separately
 serializes inference and hook mutation. `generate` and graph generation use a
