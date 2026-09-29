@@ -4,7 +4,7 @@
 [Containment plan](rogue_agent_containment_plan.md) ·
 [Workspace roadmap](global_workspace_improvement_plan.md)
 
-Status: Phases 0–2 delivered 2026-09-29; later phases proposed. Reviewed at commit
+Status: Phases 0–3 delivered 2026-09-29; later phases proposed. Reviewed at commit
 `8be027d`. Paths and line numbers in the findings refer to that commit; Phase 1
 moved `src/` to `machine_poi/`.
 
@@ -163,7 +163,27 @@ Delivered as one commit per item with regression tests. Notes beyond the table:
 | R9 | Store the embedding model, dimension, corpus SHA-256 and schema version in collection metadata. On mismatch, rebuild when `--rebuild` is given, otherwise fail clearly. Share one embedder instance between the steerer and the KB. | Switching `--embedding` without `--rebuild` fails clearly. |
 | M6 (graph) | Either implement neighbor-based bridge extraction and fill `graph_entities`/`relationships`, or document that graph bridging currently falls back to embeddings. Remove the unused `fusion_strategy`. | Docs match behavior; a test covers whichever path is kept. |
 
-### Phase 3: steering methodology (port the evidence into the library)
+### Phase 3: steering methodology (port the evidence into the library) (delivered)
+
+Delivered as one commit per item with tests. Notes beyond the table:
+- M5 misses its speed target. On CPU, batched pooling of 50 texts was 0.65× the
+  unbatched speed until batches were grouped by token length; with that it is
+  1.4–1.7×, not 3×. GPU was not measured. Results match one-text-at-a-time
+  pooling to floating-point tolerance.
+- M2 measures the layer scale as the **median** per-token norm, not the mean: the
+  first-position attention-sink token can inflate a mean by an order of
+  magnitude. Diagnostics add `median_activation_norm` and the achieved
+  `dose_ratio`; `relative_perturbation` keeps its mean-based definition. The
+  library default is ratio 0.05. The `strong` and `workspace` presets moved from
+  clamp to add mode, since a ratio has no clamp meaning; clamp, blend and replace
+  take a raw `--coefficient`. Per-model recommended coefficients were removed.
+- M3 uses 120 original Modern Standard Arabic sentences written for the project,
+  pending review by a native speaker. The optional English-translation contrast
+  was not added.
+- M1 bumps steering caches to format 3; rejected caches log which field differs.
+  The CLI gains `--recipe`. Retrieval-driven (dynamic and thematic) vectors are
+  still uncentered means; Phase 4 should measure whether to center them too.
+- M6 deleted `steering_vectors.py` and its tests.
 
 | Item | Change | Acceptance |
 | --- | --- | --- |
@@ -212,15 +232,14 @@ staged enforcement) stay in the [containment plan](rogue_agent_containment_plan.
 
 1. **License and corpus provenance (E6).** Choose a repository license, and record
    the source, edition and terms of `al-quran.txt` (plus a checksum) in a NOTICE.
-2. **Neutral Arabic control corpus (M3).** Pick a corpus whose license permits
-   redistribution, or download it at run time.
+2. **Neutral Arabic control corpus (M3).** Decided: original sentences written
+   for the project (no third-party license); a native-speaker review is pending.
 3. **Package rename (E1).** Decided: `machine_poi`, clean break, no `src` alias.
 4. **G1 semantics.** Phase 0 implemented the recommendation: already-dispatched
    actions finish while a review is pending. The stricter alternative holds them
    until the review resolves and refunds the reservation, which adds latency and
    code. Revisit if a host needs pause to freeze in-flight work.
-5. **Projection-based vectors (M6).** Delete them, or keep them as clearly
-   labelled experiments.
+5. **Projection-based vectors (M6).** Decided: deleted.
 
 ## Not recommended
 

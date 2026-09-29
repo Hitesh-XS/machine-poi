@@ -12,11 +12,6 @@ __version__ = "0.1.0"
 
 _PUBLIC_IMPORTS = {
     "QuranEmbeddings": (".quran_embeddings", "QuranEmbeddings"),
-    "SteeringVectorExtractor": (".steering_vectors", "SteeringVectorExtractor"),
-    "ContrastiveSteeringExtractor": (
-        ".steering_vectors",
-        "ContrastiveSteeringExtractor",
-    ),
     "SteeredLLM": (".llm_wrapper", "SteeredLLM"),
     "QuranSteerer": (".steerer", "QuranSteerer"),
     "ContrastiveQuranSteerer": (".steerer", "ContrastiveQuranSteerer"),

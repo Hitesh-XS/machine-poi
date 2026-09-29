@@ -64,7 +64,6 @@ class LLMModelConfig(TypedDict, total=False):
     hf_path: str
     description: str
     recommended_layers: List[int]
-    recommended_coefficient: float
     reasoning: ReasoningConfig
 
 
@@ -103,14 +102,15 @@ class QuranEmbeddingsResult(TypedDict):
 
 
 # The single LLM registry, used by the CLI, SteeredLLM and the experiments.
-# Recommended coefficients and layers are starting points, not validated doses;
-# models without them fall back to the "moderate" preset.
+# Recommended layers are starting points, not validated choices; models without
+# them use the preset's layer distribution. Doses come from the presets as
+# relative-perturbation ratios, which transfer between models where raw
+# coefficients do not.
 LLM_MODELS: Dict[str, LLMModelConfig] = {
     "deepseek-r1-1.5b": {
         "hf_path": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
         "description": "Reasoning distill; thinks in <think>...</think> blocks",
         "recommended_layers": list(range(10, 20)),
-        "recommended_coefficient": 0.4,
         "reasoning": {
             "mode": "deepseek",
             "temperature": 0.6,
@@ -122,27 +122,23 @@ LLM_MODELS: Dict[str, LLMModelConfig] = {
         "hf_path": "microsoft/Phi-4-mini-reasoning",
         "description": "Math reasoning, no special tokens",
         "recommended_layers": list(range(12, 24)),
-        "recommended_coefficient": 0.3,
         "reasoning": {"mode": "phi", "temperature": 0.8, "top_p": 0.95},
     },
     "qwen3-0.6b": {
         "hf_path": "Qwen/Qwen3-0.6B",
         "description": "Native thinking via enable_thinking in the chat template",
         "recommended_layers": list(range(10, 20)),
-        "recommended_coefficient": 0.5,
         "reasoning": {"mode": "qwen3", "temperature": 0.6, "top_p": 0.95, "top_k": 20},
     },
     "smollm3": {
         "hf_path": "HuggingFaceTB/SmolLM3-3B",
         "description": "No native reasoning mode",
         "recommended_layers": list(range(12, 24)),
-        "recommended_coefficient": 0.35,
     },
     "gemma-270m": {
         "hf_path": "google/gemma-3-270m-it",
         "description": "No native reasoning mode; gated on Hugging Face",
         "recommended_layers": list(range(6, 14)),
-        "recommended_coefficient": 0.5,
     },
     "gemma-4-e2b": {
         "hf_path": "google/gemma-4-E2B-it",
@@ -157,19 +153,16 @@ LLM_MODELS: Dict[str, LLMModelConfig] = {
         "hf_path": "Qwen/Qwen2.5-0.5B-Instruct",
         "description": "Standard instruct model",
         "recommended_layers": list(range(8, 18)),
-        "recommended_coefficient": 0.5,
     },
     "smollm2-135m": {
         "hf_path": "HuggingFaceTB/SmolLM2-135M-Instruct",
         "description": "Compact instruct model",
         "recommended_layers": list(range(10, 22)),
-        "recommended_coefficient": 0.6,
     },
     "smollm2-360m": {
         "hf_path": "HuggingFaceTB/SmolLM2-360M-Instruct",
         "description": "Compact instruct model",
         "recommended_layers": list(range(12, 24)),
-        "recommended_coefficient": 0.5,
     },
 }
 
@@ -234,6 +227,13 @@ class SteeringDefaults:
     
     # Sample size for computing mean activations
     activation_sample_size: int = 50
+
+    # Texts per forward pass when pooling activations
+    activation_batch_size: int = 8
+
+    # Leave BOS/EOS/special positions out of pooled activations. False restores
+    # averaging over every token, which the attention-sink position dominates.
+    pool_exclude_special_tokens: bool = True
     
     # Sample size for Quran Persona (larger for comprehensive coverage)
     persona_sample_size: int = 100
@@ -302,7 +302,7 @@ class SteeringPreset:
 
     name: str
     description: str
-    coefficient: float
+    dose_ratio: float  # target relative perturbation, see SteeringConfig
     target_layers: Optional[List[int]]
     injection_mode: str
     chunk_by: str
@@ -313,7 +313,7 @@ STEERING_PRESETS = {
     "gentle": SteeringPreset(
         name="gentle",
         description="Subtle influence, minimal disruption to base model",
-        coefficient=0.2,
+        dose_ratio=0.02,
         target_layers=None,  # Auto-select
         injection_mode="add",
         chunk_by="verse",
@@ -322,7 +322,7 @@ STEERING_PRESETS = {
     "moderate": SteeringPreset(
         name="moderate",
         description="Balanced influence, noticeable but not overwhelming",
-        coefficient=0.5,
+        dose_ratio=0.05,
         target_layers=None,
         injection_mode="add",
         chunk_by="verse",
@@ -331,16 +331,16 @@ STEERING_PRESETS = {
     "strong": SteeringPreset(
         name="strong",
         description="Strong influence, significant effect on outputs",
-        coefficient=0.8,
+        dose_ratio=0.1,
         target_layers=None,
-        injection_mode="clamp",  # Strong needs clamp for stability
+        injection_mode="add",
         chunk_by="paragraph",
         layer_distribution="uniform",
     ),
     "focused": SteeringPreset(
         name="focused",
         description="Concentrated effect on specific middle layers",
-        coefficient=0.6,
+        dose_ratio=0.05,
         target_layers=None,
         injection_mode="add",
         chunk_by="verse",
@@ -349,9 +349,9 @@ STEERING_PRESETS = {
     "workspace": SteeringPreset(
         name="workspace",
         description="Selective intermediate-layer steering inspired by global workspace interpretability",
-        coefficient=0.5,
+        dose_ratio=0.05,
         target_layers=None,
-        injection_mode="clamp",
+        injection_mode="add",
         chunk_by="verse",
         layer_distribution="workspace",
     ),
@@ -372,7 +372,6 @@ class ExperimentConfig:
 
     # Steering parameters
     preset: str = "moderate"
-    custom_coefficient: Optional[float] = None
     custom_layers: Optional[List[int]] = None
 
     # Generation parameters
@@ -451,9 +450,8 @@ def get_recommended_config(
     Get recommended configuration for a given model combination.
 
     An explicitly requested preset takes precedence over the model's
-    recommended coefficient and layers, which apply only when no preset is
-    given. Without a preset, the "moderate" preset supplies the remaining
-    settings.
+    recommended layers, which apply only when no preset is given. Without a
+    preset, the "moderate" preset supplies the dose and remaining settings.
 
     Args:
         llm_model: LLM model name
@@ -472,7 +470,6 @@ def get_recommended_config(
     # Apply model-specific recommendations
     if intensity is None and llm_model in LLM_MODELS:
         model_config = LLM_MODELS[llm_model]
-        config.custom_coefficient = model_config.get("recommended_coefficient")
         config.custom_layers = model_config.get("recommended_layers")
 
     return config

@@ -39,8 +39,8 @@ Examples:
   # Use specific model
   python main.py --llm qwen3-0.6b --embedding bge-m3
 
-  # Adjust steering strength
-  python main.py --preset strong --coefficient 0.8
+  # Adjust the dose (target relative perturbation per layer)
+  python main.py --preset strong --dose-ratio 0.08
 
   # Interactive mode
   python main.py --interactive
@@ -82,14 +82,23 @@ Examples:
         type=str,
         default=None,
         choices=list(STEERING_PRESETS.keys()),
-        help="Steering preset (default: the model's recommended coefficient and "
-             "layers, otherwise 'moderate')",
+        help="Steering preset (default: 'moderate' with the model's recommended "
+             "layers)",
     )
-    parser.add_argument(
+    dose = parser.add_mutually_exclusive_group()
+    dose.add_argument(
+        "--dose-ratio",
+        type=float,
+        default=None,
+        help="Target relative perturbation per steered layer, calibrated from "
+             "activation norms (-1 to 1; negative steers away; add mode only)",
+    )
+    dose.add_argument(
         "--coefficient",
         type=float,
         default=None,
-        help="Override steering coefficient (0.0-2.0; blend mode 0.0-1.0)",
+        help="Raw steering coefficient instead of a dose ratio (0.0-2.0; blend mode "
+             "0.0-1.0); required for blend, replace and clamp modes",
     )
     parser.add_argument(
         "--injection-mode",
@@ -111,6 +120,13 @@ Examples:
         default=None,
         choices=["verse", "paragraph", "surah"],
         help="How to chunk Quran text (default: from preset)",
+    )
+    parser.add_argument(
+        "--recipe",
+        default="centered",
+        choices=["centered", "raw_mean"],
+        help="Vector recipe: Quran mean minus a neutral Arabic control mean "
+             "(default), or the older uncentered mean",
     )
 
     # Paths
@@ -272,11 +288,17 @@ def resolve_steering(args, config: ExperimentConfig):
     Returns the validated SteeringConfig and the text chunking to use.
     """
     preset = config.get_preset()
-    coefficient = next(
-        value
-        for value in (args.coefficient, config.custom_coefficient, preset.coefficient)
-        if value is not None
-    )
+    injection_mode = args.injection_mode or preset.injection_mode
+    if args.coefficient is not None:
+        dose = {"dose_ratio": None, "coefficient": args.coefficient}
+    elif injection_mode != "add":
+        raise InvalidConfigError(
+            f"--injection-mode {injection_mode} needs --coefficient; dose ratios "
+            "apply to add mode"
+        )
+    else:
+        ratio = args.dose_ratio if args.dose_ratio is not None else preset.dose_ratio
+        dose = {"dose_ratio": ratio}
     if args.layer_distribution is not None:
         target_layers = None  # The explicit distribution selects layers.
     elif config.custom_layers is not None:
@@ -284,9 +306,9 @@ def resolve_steering(args, config: ExperimentConfig):
     else:
         target_layers = preset.target_layers
     steering = SteeringConfig(
-        coefficient=coefficient,
+        **dose,
         target_layers=target_layers,
-        injection_mode=args.injection_mode or preset.injection_mode,
+        injection_mode=injection_mode,
         layer_distribution=args.layer_distribution or preset.layer_distribution,
     )
     steering.validate()
@@ -318,6 +340,14 @@ def generation_options(args) -> dict:
     }
 
 
+def describe_dose(steering) -> str:
+    """Describe the dose: a calibrated ratio, or the raw coefficient."""
+    ratio = steering.get("dose_ratio")
+    if ratio is not None:
+        return f"dose ratio {ratio}"
+    return f"coefficient {steering.get('coefficient')}"
+
+
 def print_settings(steerer: QuranSteerer) -> None:
     """Print the decoding and steering settings the last run used."""
     settings = steerer.last_run_settings
@@ -331,7 +361,7 @@ def print_settings(steerer: QuranSteerer) -> None:
     steering = settings.get("steering", {})
     print(
         f"[seed {settings.get('seed')}, {decoding}, retrieval {settings.get('retrieval')}, "
-        f"coefficient {steering.get('coefficient')}, mode {steering.get('injection_mode')}, "
+        f"{describe_dose(steering)}, mode {steering.get('injection_mode')}, "
         f"chat template {settings.get('chat_template')}]"
     )
 
@@ -340,7 +370,8 @@ def run_interactive(steerer: QuranSteerer, args):
     """Run interactive chat mode."""
     print("\n=== Interactive Mode ===")
     print("Type 'quit' to exit, 'compare' to toggle comparison mode")
-    print("Type 'strength <value>' to adjust steering (0.0-2.0; blend mode 0.0-1.0)")
+    print("Type 'strength <value>' to adjust the dose (a ratio in -1 to 1, or the raw "
+          "coefficient when running with --coefficient)")
     print()
 
     compare_mode = True
@@ -367,8 +398,11 @@ def run_interactive(steerer: QuranSteerer, args):
         if prompt.lower().startswith("strength "):
             try:
                 value = float(prompt.split()[1])
-                steerer.set_steering_strength(value)
-                print(f"Steering strength set to {value}")
+                if steerer.config.dose_ratio is None:
+                    steerer.set_steering_strength(value)
+                else:
+                    steerer.set_dose_ratio(value)
+                print(f"Steering set to {describe_dose(vars(steerer.config))}")
             except InvalidConfigError as exc:
                 print(f"Strength unchanged: {exc}")
             except (ValueError, IndexError):
@@ -464,7 +498,7 @@ def run(args):
     print(f"  LLM Model: {config.llm_model}")
     print(f"  Embedding Model: {config.embedding_model}")
     print(f"  Preset: {args.preset or f'model default ({config.preset} fallback)'}")
-    print(f"  Coefficient: {steering.coefficient}")
+    print(f"  Dose: {describe_dose(vars(steering))}")
     print(f"  Injection Mode: {steering.injection_mode}")
     print(f"  Layer Distribution: {steering.layer_distribution}")
     print(f"  Target Layers: {steering.target_layers or 'from distribution'}")
@@ -526,16 +560,17 @@ def run(args):
 
     # Prepare steering
     print("Preparing Quran-based steering vectors...")
-    cache_path = Path(args.cache_dir) / f"quran_{args.embedding}_{chunk_by}.npz"
+    cache_path = Path(args.cache_dir) / f"quran_{args.embedding}_{chunk_by}_{args.recipe}.npz"
 
     if args.theme:
         steerer.prepare_thematic_steering(args.theme)
     elif args.quran_persona:
-        steerer.prepare_quran_persona(cache_dir=args.cache_dir)
+        steerer.prepare_quran_persona(cache_dir=args.cache_dir, recipe=args.recipe)
     else:
         steerer.prepare_quran_steering(
             chunk_by=chunk_by,
             cache_path=cache_path,
+            recipe=args.recipe,
         )
 
     print("Ready!\n")

@@ -141,6 +141,7 @@ def test_dynamic_generation_failure_restores_baseline(graph):
     results = {"verse": [{"content": "reference"}], "passage": [], "surah": []}
     steerer.compute_dynamic_steering = Mock(return_value={0: torch.tensor([0.0, 1.0])})
     steerer.config.target_layers = [0]
+    steerer.config.dose_ratio = None  # the stub model has no tokenizer to calibrate
     steerer.knowledge_base = Mock(spec=QuranKnowledgeBase)
     steerer.knowledge_base.query_multiresolution.return_value = results
 

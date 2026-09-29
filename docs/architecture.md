@@ -99,7 +99,7 @@ across restarts or replicas. Details are in the [guardian guide](guardian_integr
 
 | Component | Responsibility |
 | --- | --- |
-| `QuranSteerer` | Prepare mean/persona vectors and orchestrate generation/retrieval |
+| `QuranSteerer` | Prepare mean/persona vectors, calibrate ratio doses and orchestrate generation/retrieval |
 | `ContrastiveQuranSteerer` | Construct vectors from positive and negative activation sets |
 | `SteeredLLM` | Load a checkpoint, register decoder-layer output hooks, serialize model use |
 | `QuranEmbeddings` | Load/chunk text and produce retrieval embeddings |
@@ -117,7 +117,7 @@ must not span an `await`. Re-registering a layer replaces its handle. Activation
 extraction runs unsteered and removes temporary capture hooks in `finally`.
 
 `last_run_diagnostics` retains scalar summaries after high-level generation;
-restoration clears captured activation tensors. This is mutable per-instance
+hooks accumulate running statistics rather than copying hidden states. This is mutable per-instance
 telemetry, not an immutable per-request audit record. Direct access to the wrapped
 model or concurrent mutation outside these APIs bypasses the serialization
 contract.

@@ -211,30 +211,45 @@ def mock_tokenizer():
 
 
 # =============================================================================
-# Component Fixtures (with mocks injected)
+# A real, tiny Llama with a word-level tokenizer (hidden size 16, 3 layers)
 # =============================================================================
 
-@pytest.fixture
-def steering_vector_extractor(sample_embedding_dim, sample_hidden_dim):
-    """Create a SteeringVectorExtractor with test dimensions."""
-    from machine_poi.steering_vectors import SteeringVectorExtractor
-    return SteeringVectorExtractor(
-        source_dim=sample_embedding_dim,
-        target_dim=sample_hidden_dim,
-        projection_type="random",
-        device="cpu",
+TINY_WORDS = "the quran mercy patience water light sound time justice path".split()
+
+
+@pytest.fixture(scope="module")
+def tiny_llm():
+    from tokenizers import Tokenizer, models, pre_tokenizers, processors
+    from transformers import LlamaConfig, LlamaForCausalLM, PreTrainedTokenizerFast
+
+    from machine_poi.llm_wrapper import DECODER_LAYOUT, SteeredLLM
+
+    vocab = {"[PAD]": 0, "[BOS]": 1, "[UNK]": 2, **{w: i + 3 for i, w in enumerate(TINY_WORDS)}}
+    backend = Tokenizer(models.WordLevel(vocab, unk_token="[UNK]"))
+    backend.pre_tokenizer = pre_tokenizers.Whitespace()
+    backend.post_processor = processors.TemplateProcessing(
+        single="[BOS] $A", special_tokens=[("[BOS]", 1)]
     )
-
-
-@pytest.fixture
-def contrastive_extractor(sample_hidden_dim):
-    """Create a ContrastiveSteeringExtractor."""
-    from machine_poi.steering_vectors import ContrastiveSteeringExtractor
-    return ContrastiveSteeringExtractor(
-        target_dim=sample_hidden_dim,
-        device="cpu",
+    tokenizer = PreTrainedTokenizerFast(
+        tokenizer_object=backend, bos_token="[BOS]", pad_token="[PAD]", unk_token="[UNK]",
+        model_input_names=["input_ids", "attention_mask"],  # like causal-LM tokenizers
     )
+    torch.manual_seed(0)
+    config = LlamaConfig(
+        vocab_size=len(vocab), hidden_size=16, intermediate_size=32,
+        num_hidden_layers=3, num_attention_heads=2, num_key_value_heads=2,
+        max_position_embeddings=64, pad_token_id=0, bos_token_id=1, eos_token_id=None,
+    )
+    llm = SteeredLLM("tiny-llama", device="cpu")
+    llm.model = LlamaForCausalLM(config).eval()
+    llm.tokenizer = tokenizer
+    llm.config = dict(DECODER_LAYOUT)
+    return llm
 
+
+# =============================================================================
+# Component Fixtures (with mocks injected)
+# =============================================================================
 
 @pytest.fixture
 def activation_hook(sample_steering_vector):

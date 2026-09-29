@@ -25,7 +25,7 @@ MODEL = "qwen2.5-0.5b"
 
 def test_model_recommendations_apply_without_a_preset(monkeypatch):
     steering, chunk_by = resolve(monkeypatch, "--llm", MODEL)
-    assert steering.coefficient == LLM_MODELS[MODEL]["recommended_coefficient"]
+    assert steering.dose_ratio == STEERING_PRESETS["moderate"].dose_ratio
     assert steering.target_layers == LLM_MODELS[MODEL]["recommended_layers"]
     assert steering.injection_mode == STEERING_PRESETS["moderate"].injection_mode
     assert chunk_by == "verse"
@@ -35,7 +35,7 @@ def test_model_recommendations_apply_without_a_preset(monkeypatch):
 def test_explicit_preset_overrides_model_recommendations(monkeypatch, preset):
     steering, chunk_by = resolve(monkeypatch, "--llm", MODEL, "--preset", preset)
     expected = STEERING_PRESETS[preset]
-    assert steering.coefficient == expected.coefficient
+    assert steering.dose_ratio == expected.dose_ratio
     assert steering.injection_mode == expected.injection_mode
     assert steering.layer_distribution == expected.layer_distribution
     assert steering.target_layers is None
@@ -51,10 +51,30 @@ def test_zero_coefficient_and_explicit_flags_win(monkeypatch):
         "--layer-distribution", "workspace",
         "--chunk-by", "surah",
     )
-    assert steering.coefficient == 0.0
+    assert steering.coefficient == 0.0 and steering.dose_ratio is None
     assert steering.layer_distribution == "workspace"
     assert steering.target_layers is None
     assert chunk_by == "surah"
+
+
+def test_signed_dose_ratio_and_raw_coefficient_for_other_modes(monkeypatch):
+    steering, _ = resolve(monkeypatch, "--llm", MODEL, "--dose-ratio", "-0.08")
+    assert steering.dose_ratio == -0.08 and steering.injection_mode == "add"
+
+    with pytest.raises(cli.InvalidConfigError, match="needs --coefficient"):
+        resolve(monkeypatch, "--llm", MODEL, "--injection-mode", "clamp")
+    steering, _ = resolve(
+        monkeypatch, "--llm", MODEL, "--injection-mode", "clamp", "--coefficient", "0.4"
+    )
+    assert steering.dose_ratio is None and steering.coefficient == 0.4
+
+    with pytest.raises(SystemExit):  # one kind of dose at a time
+        parse(monkeypatch, "--dose-ratio", "0.05", "--coefficient", "0.4")
+
+
+def test_settings_line_names_the_kind_of_dose():
+    assert cli.describe_dose({"dose_ratio": 0.05, "coefficient": 0.5}) == "dose ratio 0.05"
+    assert cli.describe_dose({"dose_ratio": None, "coefficient": 0.5}) == "coefficient 0.5"
 
 
 def run_main(monkeypatch, *argv):
@@ -72,6 +92,7 @@ def test_main_applies_zero_coefficient_before_preparing_vectors(monkeypatch):
     assert steerer.config.coefficient == 0.0
     steerer.prepare_quran_steering.assert_called_once()
     assert steerer.prepare_quran_steering.call_args.kwargs["chunk_by"] == "verse"
+    assert steerer.prepare_quran_steering.call_args.kwargs["recipe"] == "centered"
     steerer.compare.assert_called_once()
 
 

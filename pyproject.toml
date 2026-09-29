@@ -51,3 +51,6 @@ version = { attr = "machine_poi.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["machine_poi*"]
+
+[tool.setuptools.package-data]
+machine_poi = ["data/*.txt"]

@@ -33,5 +33,5 @@ def test_gemma_4_aliases_resolve_and_use_the_preset_dose(monkeypatch):
     args = cli.parse_args()
     config = get_recommended_config(args.llm, args.embedding, intensity=args.preset)
     steering, _ = cli.resolve_steering(args, config)
-    assert config.custom_coefficient is None and steering.target_layers is None
-    assert steering.coefficient == config.get_preset().coefficient
+    assert steering.target_layers is None
+    assert steering.dose_ratio == config.get_preset().dose_ratio == 0.05

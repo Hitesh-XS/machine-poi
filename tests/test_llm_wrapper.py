@@ -215,10 +215,14 @@ class TestActivationHookBehavior:
         torch.testing.assert_close(result, original)
 
     def test_captures_activation(self, sample_steering_vector, sample_hidden_states):
-        """Test that hook captures activations."""
+        """Hooks copy hidden states only when capture is requested."""
         from machine_poi.llm_wrapper import ActivationHook
-        
-        hook = ActivationHook(layer_idx=12)
+
+        default = ActivationHook(layer_idx=12)
+        default(None, None, sample_hidden_states)
+        assert default.captured_activation is None
+
+        hook = ActivationHook(layer_idx=12, capture=True)
         hook(None, None, sample_hidden_states)
         
         assert hook.captured_activation is not None

@@ -18,7 +18,7 @@ steerer = QuranSteerer(
     embedding_model="paraphrase-minilm",
 )
 steerer.load_models()
-steerer.config.coefficient = 0.2
+steerer.config.dose_ratio = 0.05  # the default; see "Dose" below
 steerer.prepare_quran_steering(
     chunk_by="verse", sample_size=8, cache_path="vectors/example_mean.npz"
 )
@@ -33,16 +33,26 @@ print(baseline)
 ```
 
 This is a small API demonstration, not a calibrated behavioral evaluation.
-`prepare_quran_steering` pools unsteered activations and normalizes the mean at
-each layer. `prepare_quran_persona` instead combines normalized verse, paragraph
-and surah means with default weights 0.50, 0.35 and 0.15, then normalizes the result.
-Use one preparation method for the experiment being measured.
+`prepare_quran_steering` pools unsteered activations and, by default
+(`recipe="centered"`), normalizes `mean(Quran) - mean(neutral Arabic control)` at
+each layer. Without centering, the mean is dominated by the component every hidden
+state shares; `recipe="raw_mean"` keeps that older vector for reproducing earlier
+results and warns. `prepare_quran_persona` instead combines centered verse,
+paragraph and surah directions with default weights 0.50, 0.35 and 0.15, then
+normalizes the result. Use one preparation method for the experiment being measured.
 
 `ContrastiveQuranSteerer.prepare_contrastive_steering(positive_texts,
 negative_texts)` constructs normalized differences between activation means.
-`prepare_quran_contrastive()` supplies Quran/neutral-text examples. The contrast
-can mix language, style and content effects; it does not isolate moral behavior
-without appropriate controls.
+`prepare_quran_contrastive()` contrasts sampled verses with a language-matched
+control: up to 50 distinct sentences from `machine_poi/data/neutral_arabic.txt`,
+120 short Modern Standard Arabic sentences written for this project about weather,
+science, daily life and similar topics. `machine_poi.controls.neutral_texts("en")`
+returns the older ten-sentence English set for an explicit cross-language run.
+Repeated negatives are dropped before pooling, and cached vectors record a hash of
+both text sets. Matching the language removes the largest confound, but the
+contrast still mixes register (classical versus modern prose) and topic, so it
+does not isolate moral behavior. A native speaker has not yet reviewed the Arabic
+set.
 
 Generation wraps the prompt as one user turn in the tokenizer's chat template
 whenever the tokenizer has one, so pass plain text rather than templated text.
@@ -156,12 +166,46 @@ coefficient. Clamp uses `u = v / (norm(v) + 1e-8)`.
 | `replace` | `v` at every position | Erases the original hidden state; the low-level hook ignores its coefficient |
 | `clamp` | `h - dot(h, u) * u + a * u` | Sets a projection along the normalized direction, up to numerical epsilon |
 
-The high-level API applies a layer-distribution scale to the configured
-coefficient. For `replace`, it scales the vector before registering the hook.
-`SteeringConfig` accepts finite coefficients in [0, 2], with [0, 1] for blend;
-the low-level hook accepts finite coefficients, with the same blend constraint.
-These are configuration bounds, not validated safety thresholds. Low-level
-experiment coefficients and normalized high-level vectors are not interchangeable.
+The high-level API applies a layer-distribution scale to the hook coefficient.
+For `replace`, it scales the vector before registering the hook.
+`SteeringConfig` accepts dose ratios in [-1, 1] and raw coefficients in [0, 2],
+with [0, 1] for blend; the low-level hook accepts any finite coefficient, with the
+same blend constraint. These are configuration bounds, not validated safety
+thresholds.
+
+## Dose
+
+The high-level dose is a **target relative perturbation**, `SteeringConfig.dose_ratio`
+(default 0.05). At each steered layer the hook coefficient is
+
+    a_l = dose_ratio * scale_l * n_l / norm(v_l)
+
+where `scale_l` is the layer-distribution scale and `n_l` is the layer's median
+per-token hidden-state norm on a calibration set. Add mode then moves every token
+by `dose_ratio * scale_l * n_l`. The first application calibrates on the English
+control sentences plus ten Arabic ones (`machine_poi.controls.calibration_texts`);
+call `steerer.calibrate_dose(texts)` to use other texts. Calibration pools content
+tokens only, and the median ignores the first-position attention-sink token,
+whose norm can be orders of magnitude above the rest. `last_run_settings` records
+the per-layer coefficients and a hash of the calibration texts.
+
+Ratios, not raw coefficients, transfer between models. High-level vectors are
+unit-norm, and the norms of committed mean-activation vectors range from 59–96
+(Gemma 4) to about 2,375 (SmolLM2), so a coefficient that moves one model
+noticeably is inert on another. Presets are ratios: `gentle` 0.02, `moderate` and
+`focused` and `workspace` 0.05, `strong` 0.1. The calibrated Gemma runs in the
+committed results changed behavior at a relative perturbation of about 0.08, but
+that figure divides by the mean token norm; the median-based ratio of the same
+update is higher. These presets are starting points, not validated doses. A
+negative ratio steers away from the direction, for ablations.
+
+Dose ratios apply to add mode. For blend, replace or clamp, set
+`dose_ratio=None` and a raw `coefficient`; `set_steering_strength(c)` does this,
+and `set_dose_ratio(r)` switches back. The achieved ratio varies with the prompt,
+since calibration is fixed: `last_run_diagnostics[layer].dose_ratio` reports the
+mean update norm divided by the run's median token norm
+(`median_activation_norm`). The older `relative_perturbation` divides by the
+mean token norm instead, which the attention-sink token inflates.
 
 **Clamp coefficient zero still removes the existing projection.** Use
 `steering_disabled()` or `generate_unsteered()` for an unsteered baseline. No
@@ -170,14 +214,22 @@ injection mode is established as universally more fluent or more stable. Read th
 
 ## Diagnostics and state lifetime
 
-After `QuranSteerer.generate` or `generate_with_graph`, read
-`steerer.last_run_diagnostics`. It contains scalar summaries captured before the
-session restores the previous hooks and drops temporary activation tensors. A
-new high-level generation resets this field; it is not a per-request history.
+After `QuranSteerer.generate`, `compare` or `generate_with_graph`, read
+`steerer.last_run_diagnostics`. Each steered layer keeps running statistics over
+every token it steered in the latest generation, prompt and decode steps alike,
+so the summary describes the whole output rather than its last token. A new
+high-level generation resets this field; it is not a per-request history.
 
-At the low level, `SteeredLLM.get_steering_diagnostics()` summarizes currently
-captured, enabled hooks after a forward pass. It uses the actual add/blend/replace/
-clamp delta. `get_attention_transport_diagnostics(prompt)` makes a separate
+At the low level, `SteeredLLM.get_steering_diagnostics()` summarizes enabled
+hooks' statistics since the last `generate` call began. It uses the actual
+add/blend/replace/clamp delta. Hooks no longer copy hidden states; register with
+`capture=True` to keep the latest hidden states in `captured_activation`.
+Vector preparation pools activations in batches with `pooled_layer_means`, which
+right-pads each batch, masks padding out of the mean and matches one-text-at-a-time
+pooling to floating-point tolerance. BOS, EOS and other special-token positions are
+also left out of the mean, because the first position carries a large activation
+shared by every text. Set `STEERING_DEFAULTS.pool_exclude_special_tokens = False`
+to average every token as before; cache metadata records which pooling was used. `get_attention_transport_diagnostics(prompt)` makes a separate
 forward pass; wrap it in `steering_disabled()` for its baseline. Geometry and
 perturbation metrics are research measurements, not action authorization signals.
 
@@ -191,7 +243,8 @@ graph context; use `generate_with_graph` for that. `SteeredLLM.generate` raises
 `last_run_settings` records what the latest `generate`, `compare` or graph run
 actually used: seed, greedy or sampling (with the effective temperature, which
 reasoning mode can override), chat templating, retrieval, a SHA-256 of the final
-prompt and the steering configuration. Record it next to any output you report.
+prompt, the steering configuration and the per-layer hook coefficients. Record it
+next to any output you report.
 
 ## Model loading and cache migration
 
@@ -200,7 +253,7 @@ prompt and the steering configuration. Record it next to any output you report.
 | Remote code | Off by default for LLMs and embedders | Review code before opt-in; supply a full 40-character commit revision |
 | LLM revision | `QuranSteerer(llm_revision=...)` or `SteeredLLM(revision=...)` | Pin the checkpoint for reproducible runs |
 | Embedding revision | `QuranEmbeddings(revision=..., trust_remote_code=...)` | Configure separately; the high-level LLM revision does not pin the embedder |
-| Steering caches | Numeric NPZ arrays and JSON model/revision/corpus/recipe metadata | Recompute old/mismatched caches; do not convert them by loading pickle |
+| Steering caches | Numeric NPZ arrays and JSON model/revision/corpus/recipe metadata, format 3 | Older formats and mismatched caches are recomputed, with a log line naming the reason; do not convert them by loading pickle |
 | Corrupt artifacts | Invalid arrays/metadata are rejected; supported cache errors trigger recomputation | Other corruption can raise; investigate and rebuild from a trusted source |
 | Dynamic retrieval steering | Off by default | Explicitly pass both opt-in flags for trusted-corpus experiments |
 | Temporary hooks | Restored after high-level generation, including failure | Use scalar diagnostics instead of relying on retained activation tensors |
@@ -214,7 +267,7 @@ wrapper APIs for serialized inference; direct model/hook mutation bypasses them.
 
 ```bash
 python main.py --help
-python main.py --llm qwen2.5-0.5b --coefficient 0.2 --prompt "What is justice?"
+python main.py --llm qwen2.5-0.5b --dose-ratio 0.05 --prompt "What is justice?"
 python main.py --quran-persona --interactive
 python main.py --preset workspace --layer-distribution workspace --interactive
 python main.py --init-db
@@ -235,11 +288,13 @@ configures the graph provider and enables graph index building with
 | `--llm`, `--llm-path` | Registered alias, or `--llm custom --llm-path MODEL_PATH`; default `deepseek-r1-1.5b` |
 | `--embedding` | Registered embedding alias; default `paraphrase-minilm` |
 | `--revision`, `--trust-remote-code` | LLM revision and reviewed-code opt-in; opt-in requires a full commit hash |
-| `--preset` | `gentle`, `moderate`, `strong`, `focused`, `workspace`; when omitted, a registered model's recommended coefficient and layers apply, with `moderate` for the remaining settings |
-| `--coefficient` | Override strength, including `0`; validated before models load: [0, 2], blend [0, 1] |
+| `--preset` | `gentle`, `moderate`, `strong`, `focused`, `workspace`; when omitted, `moderate` with a registered model's recommended layers |
+| `--dose-ratio` | Target relative perturbation per layer, in [-1, 1]; negative steers away; add mode only |
+| `--coefficient` | Raw coefficient instead of a ratio, including `0`: [0, 2], blend [0, 1]; required for blend, replace and clamp |
 | `--injection-mode` | `add`, `blend`, `replace`, `clamp` |
 | `--layer-distribution` | `uniform`, `bell`, `focused`, `workspace` |
 | `--chunk-by`, `--quran-persona`, `--theme` | Select text resolution (default from preset), weighted persona, or thematic preparation |
+| `--recipe` | `centered` (default) or `raw_mean` for mean and persona vectors |
 | `--quran-path`, `--cache-dir` | Corpus and steering-cache paths |
 | `--device`, `--quantize` | Device (`cpu`, `cuda`, `mps`) and optional `4bit`/`8bit` loading |
 | `--max-tokens`, `--temperature` | Generation options, forwarded on every CLI path |
@@ -251,10 +306,13 @@ configures the graph provider and enables graph index building with
 | `--llm-provider`, `--llm-api-model` | Provider (`openai`, `gemini`, `ollama`) and its model name |
 
 Settings resolve in this order: an explicit flag, then `--preset`, then the
-model's recommendation, then `moderate`. `--layer-distribution` selects layers
+model's recommended layers, then `moderate`. `--dose-ratio` and `--coefficient`
+are mutually exclusive, and a non-add `--injection-mode` needs `--coefficient`.
+Both are validated before models load. `--layer-distribution` selects layers
 from that distribution instead of a model's recommended layers. A zero
 coefficient is applied as given; remember that zero clamp is not an unsteered
-baseline.
+baseline. In interactive mode, `strength <value>` changes whichever kind of dose
+the run uses.
 
 ## Registered model aliases
 
@@ -272,8 +330,8 @@ layer count come from the loaded checkpoint.
 | `qwen3-0.6b` | `Qwen/Qwen3-0.6B` |
 | `smollm3` | `HuggingFaceTB/SmolLM3-3B` |
 | `gemma-270m` | `google/gemma-3-270m-it` |
-| `gemma-4-e2b` | `google/gemma-4-E2B-it` (no recommended dose; uses the preset) |
-| `gemma-4-e4b` | `google/gemma-4-E4B-it` (no recommended dose; uses the preset) |
+| `gemma-4-e2b` | `google/gemma-4-E2B-it` (no recommended layers; uses the preset's distribution) |
+| `gemma-4-e4b` | `google/gemma-4-E4B-it` (no recommended layers; uses the preset's distribution) |
 | `qwen2.5-0.5b` | `Qwen/Qwen2.5-0.5B-Instruct` |
 | `smollm2-135m` | `HuggingFaceTB/SmolLM2-135M-Instruct` |
 | `smollm2-360m` | `HuggingFaceTB/SmolLM2-360M-Instruct` |

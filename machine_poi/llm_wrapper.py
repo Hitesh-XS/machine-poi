@@ -24,6 +24,7 @@ from transformers import (
 from contextlib import contextmanager
 
 from .config import LLM_MODELS
+from .workspace_diagnostics import SteeringStats
 
 
 # Setup module logger
@@ -107,7 +108,13 @@ def synchronized(method):
 
 
 class ActivationHook:
-    """Hook to capture and optionally modify activations."""
+    """Hook that steers a layer's output and keeps running statistics.
+
+    ``stats`` accumulates per-token steering statistics while the hook is
+    enabled. ``capture=True`` additionally keeps a copy of the latest
+    hidden states in ``captured_activation`` (off by default: it clones the
+    full tensor on every forward pass).
+    """
 
     def __init__(
         self,
@@ -115,6 +122,7 @@ class ActivationHook:
         steering_vector: Optional[torch.Tensor] = None,
         coefficient: float = 1.0,
         injection_mode: str = "add",  # "add", "replace", "blend", "clamp"
+        capture: bool = False,
     ):
         if injection_mode not in {"add", "blend", "replace", "clamp"}:
             raise ValueError("Unknown injection mode")
@@ -129,7 +137,9 @@ class ActivationHook:
         self.steering_vector = steering_vector
         self.coefficient = coefficient
         self.injection_mode = injection_mode
+        self.capture = capture
         self.captured_activation = None
+        self.stats = SteeringStats()
         self.enabled = True
 
     def __call__(
@@ -147,11 +157,14 @@ class ActivationHook:
             hidden_states = output
             rest = None
 
-        # Capture activation
-        self.captured_activation = hidden_states.detach().clone()
+        if self.capture:
+            self.captured_activation = hidden_states.detach().clone()
 
         if not self.enabled or self.steering_vector is None:
             return output
+        self.stats.update(
+            hidden_states, self.steering_vector, self.coefficient, self.injection_mode
+        )
 
         if hidden_states.shape[-1] != self.steering_vector.shape[0]:
             raise ValueError("Steering vector does not match hidden dimension")
@@ -400,6 +413,7 @@ class SteeredLLM:
         steering_vector: Optional[torch.Tensor] = None,
         coefficient: float = 1.0,
         injection_mode: str = "add",
+        capture: bool = False,
     ) -> ActivationHook:
         """
         Register a steering hook at a specific layer.
@@ -409,6 +423,7 @@ class SteeredLLM:
             steering_vector: Vector to inject
             coefficient: Scaling coefficient
             injection_mode: How to inject the vector
+            capture: Keep the latest hidden states in captured_activation
 
         Returns:
             The registered hook
@@ -424,6 +439,7 @@ class SteeredLLM:
             steering_vector=steering_vector,
             coefficient=coefficient,
             injection_mode=injection_mode,
+            capture=capture,
         )
 
         if layer_idx in self._handles_by_layer:
@@ -498,19 +514,25 @@ class SteeredLLM:
         with self._steering_lock:
             previous = [
                 (i, h.steering_vector.detach().clone() if h.steering_vector is not None else None,
-                 h.coefficient, h.injection_mode, h.enabled)
+                 h.coefficient, h.injection_mode, h.enabled, h.capture)
                 for i, h in self.hooks.items()
             ]
             try:
                 yield
             finally:
                 self.clear_steering()
-                for i, vector, coefficient, mode, enabled in previous:
-                    hook = self.register_steering_hook(i, vector, coefficient, mode)
+                for i, vector, coefficient, mode, enabled, capture in previous:
+                    hook = self.register_steering_hook(i, vector, coefficient, mode, capture)
                     hook.enabled = enabled
 
+    @synchronized
+    def reset_steering_stats(self) -> None:
+        """Start new running statistics on every hook."""
+        for hook in self.hooks.values():
+            hook.stats.reset()
+
     def get_activations(self, layer_idx: int) -> Optional[torch.Tensor]:
-        """Get captured activations from a layer."""
+        """Get captured activations from a layer (hooks registered with capture=True)."""
         if layer_idx in self.hooks:
             return self.hooks[layer_idx].captured_activation
         return None
@@ -759,6 +781,8 @@ class SteeredLLM:
             )
         if self.model is None:
             self.load_model()
+        # Diagnostics describe this call: prefill plus every decode step.
+        self.reset_steering_stats()
 
         # Model-specific reasoning settings from the registry
         reasoning = self.reasoning_config if reasoning_mode else None
@@ -833,6 +857,125 @@ class SteeredLLM:
             )
 
         return steered, unsteered
+
+    @synchronized
+    def pooled_layer_means(
+        self,
+        texts: List[str],
+        layers: Optional[List[int]] = None,
+        batch_size: int = 8,
+        exclude_special: bool = True,
+    ) -> Dict[int, torch.Tensor]:
+        """
+        Mean unsteered hidden state of each text at each layer, in batches.
+
+        With ``exclude_special`` (the default), BOS, EOS and other special
+        token positions are left out of the mean: they carry large generic
+        activations (attention sinks) shared by every text. Set it to False
+        to average every non-padding position, as before.
+
+        Texts are right-padded so real tokens see the same positions and
+        context as when run alone; padding is excluded from the mean. Batches
+        group texts of similar token length to limit padding, and results
+        come back in the input order. Hooks pool inside the forward pass
+        instead of copying full hidden states.
+
+        Returns:
+            Dict mapping layer index to a float32 CPU tensor [len(texts), hidden]
+        """
+        def mean(hidden, mask):
+            weights = mask.to(hidden.dtype).unsqueeze(-1)
+            return (hidden * weights).sum(dim=1) / weights.sum(dim=1).clamp_min(1)
+
+        pooled, order = self._reduce_layer_states(
+            texts, layers, batch_size, exclude_special, mean
+        )
+        restore = torch.argsort(torch.tensor(order))
+        return {layer: torch.cat(chunks)[restore] for layer, chunks in pooled.items()}
+
+    @synchronized
+    def layer_token_norms(
+        self,
+        texts: List[str],
+        layers: Optional[List[int]] = None,
+        batch_size: int = 8,
+        exclude_special: bool = True,
+    ) -> Dict[int, float]:
+        """
+        Median unsteered per-token hidden-state norm at each layer.
+
+        The median over every content token of every text is the scale that
+        dose ratios refer to. Unlike the mean, one attention-sink token with a
+        massive norm barely moves it.
+        """
+        def norms(hidden, mask):
+            return hidden.norm(dim=-1)[mask.bool()]
+
+        collected, _ = self._reduce_layer_states(
+            texts, layers, batch_size, exclude_special, norms
+        )
+        return {layer: float(torch.cat(chunks).median()) for layer, chunks in collected.items()}
+
+    def _reduce_layer_states(self, texts, layers, batch_size, exclude_special, reduce):
+        """Run texts through the unsteered model and reduce each layer's output.
+
+        ``reduce(hidden, mask)`` receives one batch's layer output and its
+        content-token mask (padding, and special tokens when excluded, are 0)
+        and returns a float tensor. Returns per-layer lists of the reduced
+        batches and the text order they ran in.
+        """
+        texts = list(texts)
+        if not texts:
+            raise ValueError("Layer statistics need at least one text")
+        if type(batch_size) is not int or batch_size < 1:
+            raise ValueError("batch_size must be a positive integer")
+        if self.model is None:
+            self.load_model()
+        layers = list(range(self.num_layers)) if layers is None else list(layers)
+
+        reduced: Dict[int, List[torch.Tensor]] = {layer: [] for layer in layers}
+        current = {}
+        lengths = [len(ids) for ids in self.tokenizer(texts)["input_ids"]]
+        order = sorted(range(len(texts)), key=lambda index: lengths[index])
+
+        def make_hook(layer_idx):
+            def hook(module, inputs, output):
+                hidden = output[0] if isinstance(output, tuple) else output
+                mask = current["mask"].to(hidden.device)
+                reduced[layer_idx].append(reduce(hidden, mask).float().cpu())
+            return hook
+
+        handles = []
+        padding_side = getattr(self.tokenizer, "padding_side", None)
+        try:
+            for layer_idx in layers:
+                layer = self._get_layer_module(layer_idx)
+                handles.append(layer.register_forward_hook(make_hook(layer_idx)))
+            if padding_side is not None:
+                self.tokenizer.padding_side = "right"
+            with self.steering_disabled(), torch.no_grad():
+                for start in range(0, len(texts), batch_size):
+                    batch = [texts[index] for index in order[start:start + batch_size]]
+                    encoded = self.tokenizer(
+                        batch,
+                        return_tensors="pt",
+                        padding=True,
+                        return_special_tokens_mask=exclude_special,
+                    )
+                    mask = encoded["attention_mask"]
+                    if exclude_special:
+                        mask = mask * (1 - encoded["special_tokens_mask"])
+                    current["mask"] = mask
+                    self.model(
+                        input_ids=encoded["input_ids"].to(self.model.device),
+                        attention_mask=encoded["attention_mask"].to(self.model.device),
+                    )
+        finally:
+            for handle in handles:
+                handle.remove()
+            if padding_side is not None:
+                self.tokenizer.padding_side = padding_side
+        return reduced, order
 
     @synchronized
     def extract_layer_activations(

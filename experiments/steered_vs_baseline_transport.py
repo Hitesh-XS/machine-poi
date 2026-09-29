@@ -157,7 +157,7 @@ def mean_activation_vectors(
     capture_hooks = {}
     handles = []
     for layer_idx in layers:
-        hook = ActivationHook(layer_idx=layer_idx, steering_vector=None)
+        hook = ActivationHook(layer_idx=layer_idx, steering_vector=None, capture=True)
         module = llm._get_layer_module(layer_idx)
         handles.append(module.register_forward_hook(hook))
         capture_hooks[layer_idx] = hook
@@ -191,8 +191,8 @@ def build_steering_vectors(
 
     Subtracting a neutral-corpus mean removes the generic component shared
     by all hidden states, leaving the verse-specific direction — the
-    contrastive approach of Rimsky et al. (2024) that machine_poi/steering_vectors.py
-    implements for the retrieval stack. Pass neutral_texts=None for the
+    contrastive approach of Rimsky et al. (2024) that ContrastiveQuranSteerer
+    implements in the library. Pass neutral_texts=None for the
     legacy raw mean activation of the verses alone.
     """
     vectors = mean_activation_vectors(llm, verses, layers)

@@ -40,16 +40,19 @@ or a proven hierarchy of semantic concepts.
 
 Activation Addition modifies intermediate model activations using directions
 constructed from contrasting prompts [1]. Machine-POI uses forward hooks and
-several vector recipes; its uncentered corpus-mean path is not the same protocol
-as the original contrasting-prompt experiments.
+several vector recipes. Its default corpus-mean path is centered on a neutral
+control set, a contrast in the spirit of CAA [2]; the older uncentered mean
+(`recipe="raw_mean"`) is not the same protocol as the original
+contrasting-prompt experiments.
 
 ### 2.2 Contrastive activation addition
 
 CAA constructs steering directions from positive/negative activation differences
 [2]. `ContrastiveQuranSteerer` pools examples at each layer, subtracts the two
-means, and normalizes the difference. Quran-versus-neutral contrasts can mix
-language, register, topic and behavior. Attributing an effect to a particular
-value requires controls that separate those factors.
+means, and normalizes the difference. The default negative set is neutral Modern
+Standard Arabic prose written for the project, so the contrast is not also
+Arabic-versus-English. It can still mix register, topic and behavior. Attributing
+an effect to a particular value requires controls that separate those factors.
 
 ### 2.3 Retrieval
 
@@ -69,13 +72,21 @@ then averages across sampled texts:
 
 $$
 \mu_l = \frac{1}{N}\sum_{i=1}^{N}\frac{1}{|T_i|}
-\sum_{t=1}^{|T_i|} h_l(T_i,t), \qquad v_l = \operatorname{normalize}(\mu_l).
+\sum_{t=1}^{|T_i|} h_l(T_i,t), \qquad v_l = \operatorname{normalize}(\mu_l - \nu_l),
 $$
 
-Each text receives equal weight after token pooling. The high-level persona path
-computes separate normalized means for verses, paragraph chunks of up to 19 verses
+where `ν_l` is the same pooled mean over the 120 neutral Arabic control sentences.
+Without centering, `μ_l` is dominated by the component that every hidden state
+shares, so its direction says little about the corpus; `recipe="raw_mean"` keeps
+`v_l = normalize(μ_l)` for reproducing older results and warns.
+
+Each text receives equal weight after token pooling. The token sum runs over
+content tokens: BOS and other special tokens are excluded by default, since the
+first position carries a large generic activation shared by every text. The high-level persona path
+computes a separate centered direction for verses, paragraph chunks of up to 19 verses
 within a surah, and surahs, combines them with default weights 0.50/0.35/0.15, and normalizes the
-combined vector. The contrastive path normalizes `mean(positive) - mean(negative)`.
+combined vector. Paragraphs and surahs are much longer than the control sentences,
+so their contrast also carries length. The contrastive path normalizes `mean(positive) - mean(negative)`.
 Zero norms are handled by the underlying normalization routines; a zero vector
 has no semantic direction.
 
@@ -103,6 +114,13 @@ it scales the vector before registration. Clamp controls a projection rather
 than an additive dose. Zero clamp removes that projection and is not a baseline.
 No mode has been shown here to preserve fluency at arbitrary strength.
 
+In add mode the high-level dose is a target relative perturbation `r`: layer
+`l` uses `a_l = r * scale_l * n_l / norm(v_l)`, where `n_l` is the median
+per-token hidden-state norm on neutral calibration sentences. A raw coefficient
+does not transfer between models, whose activation scales differ by more than an
+order of magnitude; a ratio does. The median avoids the first-position
+attention-sink token, whose norm dominates a mean.
+
 ### 3.3 Retrieval and domain bridges
 
 MRA adds verse, passage and surah context to the prompt. Domain bridging first
@@ -116,15 +134,16 @@ it does not verify the corpus or detect malicious instructions.
 
 `SteeredLLM` serializes inference and hook mutations. High-level generation scopes
 temporary steering to a session, restores prior vectors/modes/enabled flags on
-success or failure, and clears temporary activation captures. Registration
-replaces a layer's previous handle. Activation extraction disables steering and
-removes capture hooks in `finally`. Async graph retrieval finishes before entering
+success or failure. Registration replaces a layer's previous handle. Activation
+pooling runs in right-padded batches with steering disabled and removes its
+hooks in `finally`. Async graph retrieval finishes before entering
 the synchronous session.
 
 Pointwise diagnostics report activation/vector norms, cosine alignment,
 projection magnitude and relative perturbation computed from the actual update
-for each injection mode. High-level generation retains these scalar summaries in
-`last_run_diagnostics`. Attention-transport experiments summarize a constructed
+for each injection mode, averaged over every steered token of a generation. The
+achieved dose ratio divides the mean update norm by the median token norm.
+High-level generation retains these scalar summaries in `last_run_diagnostics`. Attention-transport experiments summarize a constructed
 connection using variation/commutator terms and holonomy. Those quantities are
 research diagnostics, with no validated threshold for authorization or safety.
 

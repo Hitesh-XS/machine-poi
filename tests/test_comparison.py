@@ -155,11 +155,12 @@ def test_recorded_settings_are_the_effective_reasoning_values():
 def test_compare_records_the_settings_both_arms_used(capsys):
     steerer = QuranSteerer(device="cpu")
     steerer.llm = fake_llm()
-    steerer.config.coefficient = 0.3
+    steerer.config.dose_ratio, steerer.config.coefficient = None, 0.3
     steerer.compare("What is truth?", do_sample=False, seed=11)
     settings = steerer.last_run_settings
     assert settings["seed"] == 11 and settings["do_sample"] is False
     assert settings["retrieval"] == "none" and settings["steering"]["coefficient"] == 0.3
+    assert "dose_calibration" not in settings
     assert len(settings["prompt_sha256"]) == 64
 
     cli.print_settings(steerer)

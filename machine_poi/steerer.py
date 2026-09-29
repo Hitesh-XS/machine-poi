@@ -10,6 +10,7 @@ import logging
 import hashlib
 import math
 import threading
+import warnings
 from functools import wraps
 import torch
 import numpy as np
@@ -17,10 +18,15 @@ from pathlib import Path
 from typing import Optional, Dict, List, Union, Tuple, Literal, Any
 from dataclasses import asdict, dataclass
 
+from .controls import (
+    calibration_texts,
+    neutral_texts as neutral_control_texts,
+    texts_sha256,
+    unique_texts,
+)
 from .quran_embeddings import QuranEmbeddings, QuranFileError, resolve_corpus_path
-from .steering_vectors import SteeringVectorExtractor, ContrastiveSteeringExtractor
 from .llm_wrapper import SteeredLLM
-from .steering_cache import load_vectors, save_vectors
+from .steering_cache import CacheMismatchError, load_vectors, save_vectors
 from .retrieval_context import quote_retrieval
 from .knowledge_base import QuranKnowledgeBase
 from .hybrid_knowledge_base import HybridQuranKnowledgeBase
@@ -67,7 +73,15 @@ class InvalidConfigError(SteeringError):
 class SteeringConfig:
     """Configuration for steering behavior."""
 
-    # Steering strength (higher = stronger effect)
+    # Dose as a target relative perturbation: at each steered layer the update
+    # norm is this fraction of the layer's median token norm, measured on a
+    # calibration set (QuranSteerer.calibrate_dose), times the layer
+    # distribution scale. Negative values steer away. Add mode only. Set it to
+    # None to use the raw coefficient below instead.
+    dose_ratio: Optional[float] = 0.05
+
+    # Raw coefficient, used only when dose_ratio is None. Its effect depends on
+    # the model's activation scale, so it does not transfer between models.
     coefficient: float = 0.5
 
     # Which layers to steer (None = auto-select middle layers)
@@ -84,6 +98,17 @@ class SteeringConfig:
 
     def validate(self) -> None:
         """Validate configuration values."""
+        if self.dose_ratio is not None:
+            if not math.isfinite(self.dose_ratio) or abs(self.dose_ratio) > 1:
+                raise InvalidConfigError(
+                    f"Dose ratio must be finite and in [-1, 1], got {self.dose_ratio}"
+                )
+            if self.injection_mode != "add":
+                raise InvalidConfigError(
+                    "Dose ratios apply to add mode; set dose_ratio=None and use "
+                    f"coefficient for {self.injection_mode!r} mode"
+                )
+
         if not 0.0 <= self.coefficient <= 2.0:
             raise InvalidConfigError(f"Coefficient must be between 0.0 and 2.0, got {self.coefficient}")
         
@@ -236,7 +261,6 @@ class QuranSteerer:
         # Components (loaded lazily)
         self.embedder: Optional[QuranEmbeddings] = None
         self.llm: Optional[SteeredLLM] = None
-        self.vector_extractor: Optional[SteeringVectorExtractor] = None
         self.knowledge_base: Optional[QuranKnowledgeBase] = None
         self.hybrid_kb: Optional[HybridQuranKnowledgeBase] = None
         self.graph_bridge_generator: Optional[GraphBridgeGenerator] = None
@@ -245,6 +269,8 @@ class QuranSteerer:
         self.quran_embeddings: Optional[Dict[str, Any]] = None
         self.steering_vectors: Optional[Dict[int, torch.Tensor]] = None
         self.config = SteeringConfig()
+        # Median token norm per layer, measured by calibrate_dose
+        self.dose_calibration: Optional[Dict[str, Any]] = None
         self.last_run_diagnostics = {}
         self.last_run_settings = {}
         
@@ -278,6 +304,7 @@ class QuranSteerer:
                 trust_remote_code=self.trust_remote_code,
             )
             self.llm.load_model()
+            self.dose_calibration = None  # norms belong to the previous model
 
     def initialize_knowledge_base(self, persist_dir: str = "quran_db") -> None:
         """Initialize the knowledge base, sharing the loaded embedder if any."""
@@ -599,41 +626,16 @@ class QuranSteerer:
             logger.warning("No texts to process for dynamic steering")
             return None
 
-        # Compute activations
-        layer_activations: Dict[int, List[torch.Tensor]] = {}
-        processed_weights: List[float] = []
-
-        for item in texts_to_process:
-            with torch.no_grad():
-                activations = self.llm.extract_layer_activations(item["text"])
-            
-            for layer_idx, act in activations.items():
-                if layer_idx not in layer_activations:
-                    layer_activations[layer_idx] = []
-                
-                # Mean pooling over sequence
-                mean_act = act.squeeze(0).mean(dim=0)
-                layer_activations[layer_idx].append(mean_act)
-            
-            processed_weights.append(item["weight"])
-
-        # Create weighted mean vector
-        weights = torch.tensor(processed_weights, device=self.device)
+        weights = torch.tensor([item["weight"] for item in texts_to_process], dtype=torch.float32)
         if not torch.isfinite(weights).all() or (weights < 0).any() or weights.sum() <= 0:
             raise InvalidConfigError("Retrieval weights must be finite, nonnegative and sum above zero")
         weights = weights / weights.sum()
-        
-        dynamic_vectors: Dict[int, torch.Tensor] = {}
-        for layer_idx, act_list in layer_activations.items():
-            # Stack: [num_items, hidden_dim]
-            stacked = torch.stack(act_list)
-            
-            # Weighted average
-            weighted_mean = torch.sum(stacked * weights.unsqueeze(-1), dim=0)
-            
-            # Normalize
-            weighted_mean = torch.nn.functional.normalize(weighted_mean, dim=-1)
-            dynamic_vectors[layer_idx] = weighted_mean
+
+        pooled = self._pooled_activations([item["text"] for item in texts_to_process])
+        dynamic_vectors: Dict[int, torch.Tensor] = {
+            layer_idx: self._unit(torch.sum(stacked * weights.unsqueeze(-1), dim=0))
+            for layer_idx, stacked in pooled.items()
+        }
 
         # Cleanup after processing
         self._cleanup_memory()
@@ -663,6 +665,7 @@ class QuranSteerer:
         if not math.isfinite(blend_ratio) or not 0 <= blend_ratio <= 1:
             raise InvalidConfigError("Dynamic blend ratio must be in [0, 1]")
         self._validate_vectors(dynamic_vectors)
+        self._ensure_dose_calibration()
         # Clear existing steering
         self.llm.clear_steering()
 
@@ -688,13 +691,8 @@ class QuranSteerer:
             else:
                 blended_vec = dynamic_vec
 
-            # Apply layer-specific scaling
-            scale = layer_distribution_scale(
-                layer_idx, self.llm.num_layers, self.config.layer_distribution
-            )
-
             scaled_vector = blended_vec
-            effective_coefficient = scale * self.config.coefficient
+            effective_coefficient = self._layer_coefficient(layer_idx, blended_vec)
             if self.config.injection_mode == "replace":
                 scaled_vector = blended_vec * effective_coefficient
 
@@ -705,18 +703,76 @@ class QuranSteerer:
                 injection_mode=self.config.injection_mode,
             )
 
-    def _cache_metadata(self, recipe, **parameters):
+    def _pooled_activations(self, texts: List[str]) -> Dict[int, torch.Tensor]:
+        """Per-text mean activations at every layer, {layer: [num_texts, hidden]}."""
+        return self.llm.pooled_layer_means(
+            list(texts),
+            batch_size=STEERING_DEFAULTS.activation_batch_size,
+            exclude_special=STEERING_DEFAULTS.pool_exclude_special_tokens,
+        )
+
+    def _unit(self, vector: torch.Tensor) -> torch.Tensor:
+        """Normalize a pooled direction and place it on the steering device."""
+        return torch.nn.functional.normalize(vector, dim=-1).to(self.device)
+
+    def _recipe_parameters(self, recipe: str) -> Dict[str, str]:
+        """Validate a vector recipe; centered recipes name their control set."""
+        if recipe == "centered":
+            return {"neutral_sha256": texts_sha256(neutral_control_texts("ar"))}
+        if recipe == "raw_mean":
+            warnings.warn(
+                "recipe='raw_mean' keeps the component every hidden state shares, so "
+                "the direction is mostly generic model state rather than Quran "
+                "content; use recipe='centered' unless reproducing older results",
+                UserWarning,
+                stacklevel=3,
+            )
+            return {}
+        raise InvalidConfigError(f"Unknown recipe {recipe!r}; use 'centered' or 'raw_mean'")
+
+    def _neutral_control_means(self) -> Dict[int, torch.Tensor]:
+        """Mean pooled activation of the neutral Arabic control set per layer."""
+        texts = neutral_control_texts("ar")
+        logger.info(f"Computing the neutral control mean from {len(texts)} Arabic sentences...")
+        pooled = self._pooled_activations(texts)
+        return {layer_idx: stacked.mean(dim=0) for layer_idx, stacked in pooled.items()}
+
+    def _direction(self, mean, control, layer_idx):
+        """Unit steering direction: the mean, minus the control mean if centering."""
+        if control is not None:
+            mean = mean - control[layer_idx]
+        return self._unit(mean)
+
+    def _use_cached_vectors(self, cache_path, metadata) -> bool:
+        """Apply matching cached vectors; log why a cache is not used."""
+        try:
+            vectors = load_vectors(cache_path, metadata)
+            self.steering_vectors = {k: torch.tensor(v, device=self.device)
+                                     for k, v in vectors.items()}
+            self._apply_steering()
+            return True
+        except CacheMismatchError as exc:
+            logger.warning("Recomputing steering vectors: %s", exc)
+        except (ValueError, KeyError, OSError, EOFError) as exc:
+            logger.warning("Cache rejected; recomputing: %s", type(exc).__name__)
+        return False
+
+    def _cache_metadata(self, method, **parameters):
         revision = self.llm_revision
         model = getattr(self.llm, "model", None)
         actual_revision = getattr(getattr(model, "config", None), "_commit_hash", None)
         if isinstance(actual_revision, str):
             revision = actual_revision
         # Format 2: verse sampling keeps every verse (format 1 dropped short ones).
-        return {"format": 2, "model": self.llm_model_name,
+        # Format 3: mean and persona vectors are centered on a neutral control by
+        # default, and the vector recipe is recorded.
+        return {"format": 3, "model": self.llm_model_name,
                 "revision": revision or "unresolved",
                 "corpus_sha256": hashlib.sha256(self.quran_path.read_bytes()).hexdigest(),
                 "hidden_size": self.llm.hidden_size, "num_layers": self.llm.num_layers,
-                "recipe": recipe, "parameters": parameters}
+                "pooling": ("content_tokens" if STEERING_DEFAULTS.pool_exclude_special_tokens
+                            else "all_tokens"),
+                "method": method, "parameters": parameters}
 
     def _save_vectors(self, path, metadata):
         save_vectors(path, {k: v.detach().float().cpu().numpy()
@@ -737,16 +793,24 @@ class QuranSteerer:
         cache_path: Optional[Union[str, Path]] = None,
         use_cached: bool = True,
         sample_size: Optional[int] = None,
+        recipe: Literal["centered", "raw_mean"] = "centered",
     ) -> Dict[int, torch.Tensor]:
         """
-        Prepare steering vectors from Quran text using Mean Activation steering.
-        
+        Prepare steering vectors from Quran text using mean activations.
+
+        The default ``centered`` recipe is contrastive activation addition:
+        ``mean(Quran) - mean(neutral Arabic control)`` at each layer, so the
+        direction keeps what distinguishes the verses rather than the large
+        component every hidden state shares. ``raw_mean`` keeps the older,
+        uncentered mean and warns.
+
         Args:
             chunk_by: How to chunk the Quran text
             cache_path: Path to cache the computed vectors
             use_cached: Whether to use cached vectors if available
             sample_size: Number of samples to use (default from config)
-            
+            recipe: "centered" (default) or "raw_mean"
+
         Returns:
             Dictionary mapping layer indices to steering vectors
         """
@@ -758,17 +822,13 @@ class QuranSteerer:
 
         if type(sample_size) is not int or sample_size < 1:
             raise InvalidConfigError("Sample size must be a positive integer")
-        metadata = self._cache_metadata("mean", chunk_by=chunk_by, sample_size=sample_size,
+        centering = self._recipe_parameters(recipe)
+        metadata = self._cache_metadata("mean", recipe=recipe, **centering, chunk_by=chunk_by,
+                                        sample_size=sample_size,
                                         seed=STEERING_DEFAULTS.random_seed)
         if cache_path and use_cached and Path(cache_path).exists():
-            try:
-                vectors = load_vectors(cache_path, metadata)
-                self.steering_vectors = {k: torch.tensor(v, device=self.device)
-                                         for k, v in vectors.items()}
-                self._apply_steering()
+            if self._use_cached_vectors(cache_path, metadata):
                 return self.steering_vectors
-            except (ValueError, KeyError, OSError, EOFError) as exc:
-                logger.warning("Cache rejected; recomputing: %s", type(exc).__name__)
 
         # Load text
         texts = self.embedder.load_quran_text(self.quran_path, chunk_by=chunk_by)
@@ -782,31 +842,12 @@ class QuranSteerer:
             selected_texts = texts
 
         logger.info("Computing mean activations from Quran text...")
-        
-        layer_activations: Dict[int, List[torch.Tensor]] = {}
-        
-        for i, text in enumerate(selected_texts):
-            if i % 10 == 0:
-                logger.debug(f"Processing {i}/{len(selected_texts)}...")
-                
-            with torch.no_grad():
-                activations = self.llm.extract_layer_activations(text)
-                
-            for layer_idx, act in activations.items():
-                if layer_idx not in layer_activations:
-                    layer_activations[layer_idx] = []
-                
-                # Mean pooling
-                mean_act = act.squeeze(0).mean(dim=0)
-                layer_activations[layer_idx].append(mean_act)
-
-        # Compute global mean per layer
-        self.steering_vectors = {}
-        for layer_idx, act_list in layer_activations.items():
-            stacked = torch.stack(act_list)
-            global_mean = stacked.mean(dim=0)
-            global_mean = torch.nn.functional.normalize(global_mean, dim=-1)
-            self.steering_vectors[layer_idx] = global_mean
+        pooled = self._pooled_activations(list(selected_texts))
+        control = self._neutral_control_means() if centering else None
+        self.steering_vectors = {
+            layer_idx: self._direction(stacked.mean(dim=0), control, layer_idx)
+            for layer_idx, stacked in pooled.items()
+        }
 
         if cache_path:
             self._save_vectors(cache_path, metadata)
@@ -909,20 +950,24 @@ class QuranSteerer:
         verse_weight: float = 0.5,
         paragraph_weight: float = 0.35,
         surah_weight: float = 0.15,
+        recipe: Literal["centered", "raw_mean"] = "centered",
     ) -> Dict[int, torch.Tensor]:
         """
         Create a "Quran Persona" by aggregating activations from all resolution levels.
         
-        This computes mean activations from verse, paragraph, and surah levels,
+        This computes a direction from verse, paragraph, and surah levels,
         then combines them with configurable weights to create a comprehensive
-        steering profile.
-        
+        steering profile. With the default ``centered`` recipe each level's
+        direction is its mean minus the neutral Arabic control mean, as in
+        :meth:`prepare_quran_steering`.
+
         Args:
             cache_dir: Directory to cache computed vectors
             verse_weight: Weight for verse-level activations
             paragraph_weight: Weight for paragraph-level activations
             surah_weight: Weight for surah-level activations
-            
+            recipe: "centered" (default) or "raw_mean"
+
         Returns:
             Dictionary mapping layer indices to combined steering vectors
         """
@@ -934,18 +979,13 @@ class QuranSteerer:
         weights = (verse_weight, paragraph_weight, surah_weight)
         if any(not math.isfinite(w) or w < 0 for w in weights) or sum(weights) <= 0:
             raise InvalidConfigError("Persona weights must be finite, nonnegative and sum above zero")
-        metadata = self._cache_metadata("persona", weights=list(weights),
+        centering = self._recipe_parameters(recipe)
+        metadata = self._cache_metadata("persona", recipe=recipe, **centering,
+                                        weights=list(weights),
                                         sample_size=STEERING_DEFAULTS.persona_sample_size,
                                         seed=STEERING_DEFAULTS.random_seed)
-        if cache_path.exists():
-            try:
-                vectors = load_vectors(cache_path, metadata)
-                self.steering_vectors = {k: torch.tensor(v, device=self.device)
-                                         for k, v in vectors.items()}
-                self._apply_steering()
-                return self.steering_vectors
-            except (ValueError, KeyError, OSError, EOFError) as exc:
-                logger.warning("Persona cache rejected; recomputing: %s", type(exc).__name__)
+        if cache_path.exists() and self._use_cached_vectors(cache_path, metadata):
+            return self.steering_vectors
 
         # Normalize weights
         total_weight = verse_weight + paragraph_weight + surah_weight
@@ -957,6 +997,7 @@ class QuranSteerer:
         
         # Collect activations from each resolution level
         resolution_activations: Dict[str, Dict[int, torch.Tensor]] = {}
+        control = self._neutral_control_means() if centering else None
         
         for resolution, weight, sample_size in [
             ("verse", verse_weight, STEERING_DEFAULTS.persona_sample_size),
@@ -972,25 +1013,11 @@ class QuranSteerer:
                 rng = np.random.RandomState(STEERING_DEFAULTS.random_seed)
                 texts = list(rng.choice(texts, size=sample_size, replace=False))
             
-            layer_acts: Dict[int, List[torch.Tensor]] = {}
-            
-            for text in texts:
-                with torch.no_grad():
-                    activations = self.llm.extract_layer_activations(text)
-                    
-                for layer_idx, act in activations.items():
-                    if layer_idx not in layer_acts:
-                        layer_acts[layer_idx] = []
-                    mean_act = act.squeeze(0).mean(dim=0)
-                    layer_acts[layer_idx].append(mean_act)
-            
-            # Compute mean for this resolution
-            resolution_activations[resolution] = {}
-            for layer_idx, act_list in layer_acts.items():
-                stacked = torch.stack(act_list)
-                mean_vec = stacked.mean(dim=0)
-                mean_vec = torch.nn.functional.normalize(mean_vec, dim=-1)
-                resolution_activations[resolution][layer_idx] = mean_vec
+            pooled = self._pooled_activations(texts)
+            resolution_activations[resolution] = {
+                layer_idx: self._direction(stacked.mean(dim=0), control, layer_idx)
+                for layer_idx, stacked in pooled.items()
+            }
             
             # Cleanup between resolutions
             self._cleanup_memory()
@@ -1042,6 +1069,7 @@ class QuranSteerer:
             )
 
         self._validate_layer_indices(target_layers)
+        self._ensure_dose_calibration()
         self.llm.clear_steering()
 
         for layer_idx in target_layers:
@@ -1049,14 +1077,8 @@ class QuranSteerer:
                 continue
 
             vector = self.steering_vectors[layer_idx]
-
-            # Apply layer-specific scaling
-            scale = layer_distribution_scale(
-                layer_idx, self.llm.num_layers, self.config.layer_distribution
-            )
-
             scaled_vector = vector
-            effective_coefficient = scale * self.config.coefficient
+            effective_coefficient = self._layer_coefficient(layer_idx, vector)
             if self.config.injection_mode == "replace":
                 scaled_vector = vector * effective_coefficient
 
@@ -1069,16 +1091,78 @@ class QuranSteerer:
 
     @serialized
     def set_steering_strength(self, coefficient: float) -> None:
-        """Adjust steering strength without recomputing vectors."""
+        """Switch to a raw coefficient without recomputing vectors.
+
+        This turns off ratio dosing (``dose_ratio`` becomes None); use
+        :meth:`set_dose_ratio` for a dose that transfers between models.
+        """
+        self._update_dose(dose_ratio=None, coefficient=coefficient)
+
+    @serialized
+    def set_dose_ratio(self, dose_ratio: float) -> None:
+        """Set the target relative perturbation without recomputing vectors."""
+        self._update_dose(dose_ratio=dose_ratio)
+
+    def _update_dose(self, **changes) -> None:
         self._ensure_llm_loaded()
-        previous = self.config.coefficient
-        self.config.coefficient = coefficient
+        previous = {name: getattr(self.config, name) for name in changes}
+        for name, value in changes.items():
+            setattr(self.config, name, value)
         try:
             self.config.validate()
         except InvalidConfigError:
-            self.config.coefficient = previous
+            for name, value in previous.items():
+                setattr(self.config, name, value)
             raise
         self._apply_steering()
+
+    @serialized
+    def calibrate_dose(self, texts: Optional[List[str]] = None) -> Dict[int, float]:
+        """Measure the median token norm at every layer, the scale of dose ratios.
+
+        Runs the unsteered model over neutral sentences, by default the English
+        control set and ten Arabic control sentences. Applying a dose ratio
+        calibrates automatically the first time; call this to use other texts.
+        Special tokens are excluded as in pooling, and the median ignores
+        attention-sink tokens with massive norms.
+
+        Returns:
+            Dict mapping layer index to its median token norm
+        """
+        self._ensure_llm_loaded()
+        texts = unique_texts(calibration_texts() if texts is None else texts)
+        if not texts:
+            raise InvalidConfigError("Dose calibration needs at least one text")
+        norms = self.llm.layer_token_norms(
+            texts,
+            batch_size=STEERING_DEFAULTS.activation_batch_size,
+            exclude_special=STEERING_DEFAULTS.pool_exclude_special_tokens,
+        )
+        if not all(math.isfinite(norm) and norm > 0 for norm in norms.values()):
+            raise SteeringError("Dose calibration found non-finite or zero token norms")
+        self.dose_calibration = {
+            "texts_sha256": texts_sha256(texts),
+            "num_texts": len(texts),
+            "layer_norms": norms,
+        }
+        logger.info(f"Calibrated dose on {len(texts)} texts")
+        return norms
+
+    def _ensure_dose_calibration(self) -> None:
+        if self.config.dose_ratio is not None and self.dose_calibration is None:
+            self.calibrate_dose()
+
+    def _layer_coefficient(self, layer_idx: int, vector: torch.Tensor) -> float:
+        """Hook coefficient for one layer: raw, or set to hit the dose ratio."""
+        scale = layer_distribution_scale(
+            layer_idx, self.llm.num_layers, self.config.layer_distribution
+        )
+        if self.config.dose_ratio is None:
+            return scale * self.config.coefficient
+        # Add mode moves every token by coefficient * |vector|.
+        norm = self.dose_calibration["layer_norms"][layer_idx]
+        vector_norm = float(vector.detach().float().norm().clamp_min(1e-8))
+        return scale * self.config.dose_ratio * norm / vector_norm
 
     def _mra_context(self, prompt: str, use_domain_bridges: bool):
         """Retrieve multi-resolution context and build the MRA prompt.
@@ -1171,7 +1255,16 @@ class QuranSteerer:
             "retrieval": retrieval,
             "prompt_sha256": hashlib.sha256(final_prompt.encode()).hexdigest(),
             "steering": asdict(self.config),
+            "layer_coefficients": {
+                layer: hook.coefficient
+                for layer, hook in getattr(self.llm, "hooks", {}).items()
+                if getattr(hook, "enabled", False)
+            },
         }
+        if self.config.dose_ratio is not None and self.dose_calibration:
+            self.last_run_settings["dose_calibration"] = {
+                key: self.dose_calibration[key] for key in ("texts_sha256", "num_texts")
+            }
 
     def _check_generation_options(self, use_dynamic_steering, trusted_retrieval, dynamic_blend_ratio):
         if use_dynamic_steering and not trusted_retrieval:
@@ -1347,9 +1440,9 @@ class ContrastiveQuranSteerer(QuranSteerer):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.contrastive_extractor: Optional[ContrastiveSteeringExtractor] = None
-        self.positive_activations: Optional[Dict[int, List[torch.Tensor]]] = None
-        self.negative_activations: Optional[Dict[int, List[torch.Tensor]]] = None
+        # Per-text pooled activations, {layer: [num_texts, hidden]}
+        self.positive_activations: Optional[Dict[int, torch.Tensor]] = None
+        self.negative_activations: Optional[Dict[int, torch.Tensor]] = None
 
     @serialized
     def prepare_contrastive_steering(
@@ -1377,53 +1470,22 @@ class ContrastiveQuranSteerer(QuranSteerer):
         """
         if not positive_texts:
             raise ValueError("positive_texts cannot be empty")
-        if not negative_texts:
+        distinct = unique_texts(negative_texts)
+        if not distinct:
             raise ValueError("negative_texts cannot be empty")
+        if len(distinct) < len(negative_texts):
+            # Repeats would silently reweight the negative mean.
+            logger.info(f"Dropped {len(negative_texts) - len(distinct)} repeated negative texts")
+        negative_texts = distinct
             
         if self.llm is None:
             self.load_models(load_embedder=False)
             
         logger.info(f"Computing contrastive vectors from {len(positive_texts)} positive and {len(negative_texts)} negative examples...")
         
-        # Initialize contrastive extractor
-        if self.contrastive_extractor is None:
-            self.contrastive_extractor = ContrastiveSteeringExtractor(
-                target_dim=self.llm.hidden_size,
-                device=self.device
-            )
-        
-        # Extract positive activations
-        logger.info("Extracting positive activations...")
-        self.positive_activations = {}
-        for i, text in enumerate(positive_texts):
-            if i % 5 == 0:
-                logger.debug(f"Processing positive {i}/{len(positive_texts)}...")
-            
-            with torch.no_grad():
-                activations = self.llm.extract_layer_activations(text)
-            
-            for layer_idx, act in activations.items():
-                if layer_idx not in self.positive_activations:
-                    self.positive_activations[layer_idx] = []
-                # Mean pool over sequence
-                mean_act = act.squeeze(0).mean(dim=0)
-                self.positive_activations[layer_idx].append(mean_act)
-        
-        # Extract negative activations
-        logger.info("Extracting negative activations...")
-        self.negative_activations = {}
-        for i, text in enumerate(negative_texts):
-            if i % 5 == 0:
-                logger.debug(f"Processing negative {i}/{len(negative_texts)}...")
-            
-            with torch.no_grad():
-                activations = self.llm.extract_layer_activations(text)
-            
-            for layer_idx, act in activations.items():
-                if layer_idx not in self.negative_activations:
-                    self.negative_activations[layer_idx] = []
-                mean_act = act.squeeze(0).mean(dim=0)
-                self.negative_activations[layer_idx].append(mean_act)
+        logger.info("Extracting positive and negative activations...")
+        self.positive_activations = self._pooled_activations(positive_texts)
+        self.negative_activations = self._pooled_activations(negative_texts)
         
         # Compute contrastive vectors: mean(positive) - mean(negative)
         logger.info("Computing contrastive steering vectors...")
@@ -1433,33 +1495,16 @@ class ContrastiveQuranSteerer(QuranSteerer):
             if layer_idx not in self.negative_activations:
                 continue
                 
-            pos_stack = torch.stack(self.positive_activations[layer_idx])
-            neg_stack = torch.stack(self.negative_activations[layer_idx])
-            
-            pos_mean = pos_stack.mean(dim=0)
-            neg_mean = neg_stack.mean(dim=0)
-            
-            # Contrastive difference
-            contrastive_vec = pos_mean - neg_mean
-            
-            # Normalize
-            contrastive_vec = torch.nn.functional.normalize(contrastive_vec, dim=-1)
-            
-            self.steering_vectors[layer_idx] = contrastive_vec
-            
-            # Also compute for the extractor
-            self.contrastive_extractor.compute_from_activations(
-                positive_activations=self.positive_activations[layer_idx],
-                negative_activations=self.negative_activations[layer_idx],
-                layer_idx=layer_idx,
-            )
+            pos_mean = self.positive_activations[layer_idx].mean(dim=0)
+            neg_mean = self.negative_activations[layer_idx].mean(dim=0)
+            self.steering_vectors[layer_idx] = self._unit(pos_mean - neg_mean)
         
         # Cache if requested
         if cache_path:
             cache_path = Path(cache_path)
             self._save_vectors(cache_path, self._cache_metadata("contrastive",
-                positive_sha256=hashlib.sha256(repr(positive_texts).encode()).hexdigest(),
-                negative_sha256=hashlib.sha256(repr(negative_texts).encode()).hexdigest()))
+                positive_sha256=texts_sha256(positive_texts),
+                negative_sha256=texts_sha256(negative_texts)))
             logger.info(f"Saved contrastive vectors to {cache_path}")
         
         # Apply steering
@@ -1482,9 +1527,10 @@ class ContrastiveQuranSteerer(QuranSteerer):
         Convenience method: use Quran as positive and generate neutral texts as negative.
         
         Args:
-            neutral_texts: Optional list of neutral texts. If None, generates simple prompts.
+            neutral_texts: Neutral negatives; default is the Arabic control set
+                (machine_poi.controls), so the contrast is not Arabic vs English
             quran_sample_size: Number of Quran verses to sample
-            neutral_sample_size: Number of neutral texts to use
+            neutral_sample_size: Maximum number of distinct neutral texts to use
             
         Returns:
             Dictionary of contrastive steering vectors
@@ -1495,23 +1541,14 @@ class ContrastiveQuranSteerer(QuranSteerer):
         # Get Quran verses as positive examples
         quran_texts = self.embedder.load_quran_text(self.quran_path, chunk_by="verse")
         rng = np.random.RandomState(STEERING_DEFAULTS.random_seed)
-        positive_texts = list(rng.choice(quran_texts, size=min(quran_sample_size, len(quran_texts)), replace=False))
+        picks = rng.choice(len(quran_texts), size=min(quran_sample_size, len(quran_texts)), replace=False)
+        positive_texts = [quran_texts[i] for i in picks]
         
-        # Generate neutral texts if not provided
+        # Language-matched control: Arabic neutral prose, sampled without repeats
         if neutral_texts is None:
-            neutral_prompts = [
-                "The weather today is mild.",
-                "Numbers are mathematical concepts.",
-                "Water is composed of hydrogen and oxygen.",
-                "Computers process information.",
-                "Colors are perceived differently.",
-                "Sound travels through air.",
-                "Plants need sunlight to grow.",
-                "Time passes continuously.",
-                "Objects have mass and volume.",
-                "Languages have grammar rules.",
-            ]
-            # Repeat to get enough samples
-            neutral_texts = (neutral_prompts * (neutral_sample_size // len(neutral_prompts) + 1))[:neutral_sample_size]
-        
+            neutral_texts = neutral_control_texts("ar")
+            if len(neutral_texts) > neutral_sample_size:
+                picks = rng.choice(len(neutral_texts), size=neutral_sample_size, replace=False)
+                neutral_texts = [neutral_texts[i] for i in picks]
+
         return self.prepare_contrastive_steering(positive_texts, neutral_texts)

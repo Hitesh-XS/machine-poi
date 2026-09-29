@@ -258,12 +258,15 @@ class TestComputeDynamicSteering:
         
         # Mock activations extraction
         # Returns Dict[layer_idx, tensor]
-        def mock_extract(text):
+        def mock_pooled(texts, **kwargs):
             return {
-                i: torch.randn(1, 10, sample_hidden_dim) # [batch, seq, dim]
+                i: torch.randn(len(texts), sample_hidden_dim)  # [texts, dim]
                 for i in range(sample_num_layers)
             }
-        steerer.llm.extract_layer_activations = mock_extract
+        steerer.llm.pooled_layer_means = mock_pooled
+        steerer.llm.layer_token_norms.return_value = {
+            i: 10.0 for i in range(sample_num_layers)
+        }
         
         steerer.device = "cpu"
         
@@ -367,12 +370,15 @@ class TestPrepareQuranSteering:
         steerer.llm.clear_steering = Mock()
         
         # Mock extractions
-        def mock_extract(text):
+        def mock_pooled(texts, **kwargs):
             return {
-                i: torch.randn(1, 5, sample_hidden_dim) 
+                i: torch.randn(len(texts), sample_hidden_dim)  # [texts, dim]
                 for i in range(sample_num_layers)
             }
-        steerer.llm.extract_layer_activations = mock_extract
+        steerer.llm.pooled_layer_means = mock_pooled
+        steerer.llm.layer_token_norms.return_value = {
+            i: 10.0 for i in range(sample_num_layers)
+        }
         
         steerer.device = "cpu"
         
@@ -426,12 +432,15 @@ class TestPrepareThematicSteering:
         steerer.llm.register_steering_hook = Mock()
         steerer.llm.clear_steering = Mock()
         
-        def mock_extract(text):
+        def mock_pooled(texts, **kwargs):
             return {
-                i: torch.randn(1, 5, sample_hidden_dim) 
+                i: torch.randn(len(texts), sample_hidden_dim)  # [texts, dim]
                 for i in range(sample_num_layers)
             }
-        steerer.llm.extract_layer_activations = mock_extract
+        steerer.llm.pooled_layer_means = mock_pooled
+        steerer.llm.layer_token_norms.return_value = {
+            i: 10.0 for i in range(sample_num_layers)
+        }
         
         # Mock Quran embeddings for search
         steerer.quran_embeddings = {
@@ -478,12 +487,15 @@ class TestPrepareQuranPersona:
         steerer.llm.register_steering_hook = Mock()
         steerer.llm.clear_steering = Mock()
         
-        def mock_extract(text):
+        def mock_pooled(texts, **kwargs):
             return {
-                i: torch.randn(1, 5, sample_hidden_dim) 
+                i: torch.randn(len(texts), sample_hidden_dim)  # [texts, dim]
                 for i in range(sample_num_layers)
             }
-        steerer.llm.extract_layer_activations = mock_extract
+        steerer.llm.pooled_layer_means = mock_pooled
+        steerer.llm.layer_token_norms.return_value = {
+            i: 10.0 for i in range(sample_num_layers)
+        }
         
         steerer.device = "cpu"
         
@@ -502,6 +514,27 @@ class TestPrepareQuranPersona:
         persona_steerer.prepare_quran_persona(cache_dir=str(tmp_path))
         
         assert persona_steerer.llm.register_steering_hook.called
+
+
+class TestPoolingSettings:
+    """Vector preparation passes the pooling defaults through and records them."""
+
+    def test_special_tokens_excluded_and_recorded(self, monkeypatch):
+        from machine_poi.config import STEERING_DEFAULTS
+        from machine_poi.steerer import QuranSteerer
+
+        steerer = QuranSteerer()
+        steerer.llm = Mock(spec=SteeredLLM)
+        steerer.llm.hidden_size, steerer.llm.num_layers = 4, 2
+        steerer.llm.pooled_layer_means.return_value = {0: torch.zeros(1, 4)}
+        steerer._pooled_activations(["text"])
+        assert steerer.llm.pooled_layer_means.call_args.kwargs["exclude_special"] is True
+        assert steerer._cache_metadata("mean")["pooling"] == "content_tokens"
+
+        monkeypatch.setattr(STEERING_DEFAULTS, "pool_exclude_special_tokens", False)
+        steerer._pooled_activations(["text"])
+        assert steerer.llm.pooled_layer_means.call_args.kwargs["exclude_special"] is False
+        assert steerer._cache_metadata("mean")["pooling"] == "all_tokens"
 
 
 class TestSetSteeringStrength:
@@ -561,3 +594,13 @@ class TestGenerateAndCompare:
         assert isinstance(steered, str)
         assert isinstance(baseline, str)
         assert generation_steerer.llm.generate.call_count == 2
+
+
+def test_embedding_projection_extractors_are_gone():
+    """Vectors come from model activations; no path projects embeddings into the model."""
+    import importlib.util
+
+    import machine_poi
+
+    assert importlib.util.find_spec("machine_poi.steering_vectors") is None
+    assert not {"SteeringVectorExtractor", "ContrastiveSteeringExtractor"} & set(machine_poi.__all__)
