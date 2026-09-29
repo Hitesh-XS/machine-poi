@@ -23,15 +23,13 @@ steerer.prepare_quran_steering(
     chunk_by="verse", sample_size=8, cache_path="vectors/example_mean.npz"
 )
 
-# Use the selected instruct checkpoint's chat template consistently.
-prompt = steerer.llm.tokenizer.apply_chat_template(
-    [{"role": "user", "content": "How should we resolve a disagreement?"}],
-    tokenize=False,
-    add_generation_prompt=True,
+# Both arms share the prompt, chat template and seed.
+steered, baseline = steerer.compare(
+    "How should we resolve a disagreement?", max_new_tokens=100
 )
-print(steerer.generate(prompt, max_new_tokens=100))
+print(steered)
 print(steerer.last_run_diagnostics)
-print(steerer.generate_unsteered(prompt, max_new_tokens=100))
+print(baseline)
 ```
 
 This is a small API demonstration, not a calibrated behavioral evaluation.
@@ -46,9 +44,14 @@ negative_texts)` constructs normalized differences between activation means.
 can mix language, style and content effects; it does not isolate moral behavior
 without appropriate controls.
 
-The wrapper only applies certain chat templates automatically in reasoning mode.
-For other instruct-model comparisons, provide consistent formatting explicitly.
-A fluent baseline is a prerequisite for interpreting a steering comparison.
+Generation wraps the prompt as one user turn in the tokenizer's chat template
+whenever the tokenizer has one, so pass plain text rather than templated text.
+Pass `chat_template=False` to send a prompt unchanged, for example a transcript
+you have already formatted. Templated text is tokenized without adding special
+tokens again, which avoids a doubled BOS. For Qwen3, `reasoning_mode` switches the
+template's thinking on or off; DeepSeek-R1 reasoning starts the response with
+`<think>`. The transport experiments keep their recorded prompt formatting. A
+fluent baseline is a prerequisite for interpreting a steering comparison.
 
 ## Retrieval and dynamic steering
 

@@ -218,10 +218,12 @@ def create_local_llm_adapter(
             # Extraction output becomes the shared knowledge graph; steered
             # text would carry the intervention into every later retrieval.
             with steered_llm.steering_disabled():
+                # full_prompt is already a System/User/Assistant transcript.
                 return steered_llm.generate(
                     prompt=full_prompt,
                     max_new_tokens=kwargs.get("max_tokens", 1024),
                     temperature=kwargs.get("temperature", 0.7),
+                    chat_template=False,
                 )
 
         # Run in executor to avoid blocking

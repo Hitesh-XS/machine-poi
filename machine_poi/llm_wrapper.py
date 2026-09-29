@@ -679,6 +679,46 @@ class SteeredLLM:
             )
         return diagnostics
 
+    def format_prompt(
+        self,
+        prompt: str,
+        reasoning_mode: bool = False,
+        chat_template: Optional[bool] = None,
+    ) -> Tuple[str, bool]:
+        """Format a prompt as a single user turn with the tokenizer's chat template.
+
+        ``chat_template=None`` applies the template when the tokenizer has one
+        (instruct checkpoints), ``True`` requires one and ``False`` leaves the
+        prompt unchanged. Returns the text and whether a template was applied.
+        """
+        has_template = bool(getattr(self.tokenizer, "chat_template", None))
+        if chat_template and not has_template:
+            raise ValueError("The tokenizer has no chat template")
+        reasoning = self.reasoning_config if reasoning_mode else None
+        think_prefix = bool(reasoning and reasoning.get("force_think_prefix"))
+        if not (has_template if chat_template is None else chat_template):
+            if think_prefix and not prompt.lstrip().startswith("<think>"):
+                prompt = "<think>\n" + prompt
+            return prompt, False
+
+        options = {}
+        if (self.reasoning_config or {}).get("mode") == "qwen3":
+            # Qwen3 templates think by default; follow the requested mode.
+            options["enable_thinking"] = bool(reasoning)
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            text = self.tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True, **options
+            )
+        except TypeError:
+            text = self.tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+        if think_prefix and not text.rstrip().endswith("<think>"):
+            # DeepSeek-R1 documentation: start the response with <think>.
+            text += "<think>\n"
+        return text, True
+
     @synchronized
     def generate(
         self,
@@ -689,6 +729,7 @@ class SteeredLLM:
         do_sample: bool = True,
         reasoning_mode: bool = False,
         seed: Optional[int] = None,
+        chat_template: Optional[bool] = None,
         **kwargs,
     ) -> str:
         """
@@ -702,6 +743,8 @@ class SteeredLLM:
             do_sample: Whether to sample (vs greedy)
             reasoning_mode: Whether to enable native reasoning mode for supported models
             seed: Seed torch's generators before decoding, for paired comparisons
+            chat_template: See format_prompt; None applies the tokenizer's
+                template when it has one
 
         Returns:
             Generated text
@@ -715,63 +758,14 @@ class SteeredLLM:
         if self.model is None:
             self.load_model()
 
-        # Apply model-specific reasoning configuration
-        if reasoning_mode and self.reasoning_config:
-            config = self.reasoning_config
-            mode = config.get("mode")
-            
-            # Use model-specific recommended parameters
-            temperature = config.get("temperature", temperature)
-            top_p = config.get("top_p", top_p)
+        # Model-specific reasoning settings from the registry
+        reasoning = self.reasoning_config if reasoning_mode else None
+        if reasoning:
+            temperature = reasoning.get("temperature", temperature)
+            top_p = reasoning.get("top_p", top_p)
             do_sample = True  # Reasoning models need sampling
-            
-            # Apply top_k if specified (Qwen3)
-            if "top_k" in config:
-                kwargs["top_k"] = config["top_k"]
-            
-            # Handle model-specific reasoning formats
-            if mode == "deepseek":
-                # DeepSeek-R1: Force thinking with <think> prefix
-                # Per documentation: "enforce the model to initiate its response with <think>\n"
-                if config.get("force_think_prefix"):
-                    stripped = prompt.lstrip()
-                    if not stripped.startswith("<think>"):
-                        prompt = "<think>\n" + prompt
-            
-            elif mode == "qwen3":
-                # Qwen3: Uses enable_thinking in chat template
-                # Apply chat template with thinking enabled
-                messages = [{"role": "user", "content": prompt}]
-                try:
-                    prompt = self.tokenizer.apply_chat_template(
-                        messages,
-                        tokenize=False,
-                        add_generation_prompt=True,
-                        enable_thinking=True,
-                    )
-                except TypeError:
-                    # Fallback if enable_thinking not supported
-                    prompt = self.tokenizer.apply_chat_template(
-                        messages,
-                        tokenize=False,
-                        add_generation_prompt=True,
-                    )
-            
-            elif mode == "phi":
-                # Phi-4-mini-reasoning: Standard math reasoning
-                # Uses chat format, add math prompt if relevant
-                messages = [{"role": "user", "content": prompt}]
-                try:
-                    prompt = self.tokenizer.apply_chat_template(
-                        messages,
-                        tokenize=False,
-                        add_generation_prompt=True,
-                    )
-                except Exception:
-                    pass  # Use raw prompt
-            
-            # Respect user-provided max_new_tokens; no forced bump
-        
+            if "top_k" in reasoning:
+                kwargs["top_k"] = reasoning["top_k"]
         elif reasoning_mode:
             # Generic reasoning mode for models without native support
             temperature = min(temperature, 0.6)
@@ -779,7 +773,9 @@ class SteeredLLM:
             if "step by step" not in prompt.lower():
                 prompt += "\nLet's think step by step:\n"
 
-        inputs = self.tokenizer(prompt, return_tensors="pt")
+        prompt, templated = self.format_prompt(prompt, reasoning_mode, chat_template)
+        # Templated text already contains BOS and other special tokens.
+        inputs = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=not templated)
         inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
 
         if seed is not None:
@@ -795,17 +791,10 @@ class SteeredLLM:
                 **kwargs,
             )
 
-        # Decode only new tokens
+        # Decode only new tokens. Qwen3 reasoning output keeps its
+        # <think>...</think> block for the caller to parse.
         new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
-        output = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
-        
-        # For Qwen3, optionally parse thinking content
-        if reasoning_mode and self.reasoning_config and self.reasoning_config.get("mode") == "qwen3":
-            # Output may contain <think>...</think> blocks
-            # Return full output (including thinking) - user can parse if needed
-            pass
-        
-        return output
+        return self.tokenizer.decode(new_tokens, skip_special_tokens=True)
 
     @synchronized
     def compare_outputs(

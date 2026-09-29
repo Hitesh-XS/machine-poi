@@ -405,8 +405,11 @@ def main():
         print("  SAMPLE GENERATIONS (first prompt)")
         print(f"{'='*74}")
         with llm.steering_disabled():
-            base_text = llm.generate(prompt, max_new_tokens=60, do_sample=False)
-        steered_text = llm.generate(prompt, max_new_tokens=60, do_sample=False)
+            # Recorded protocol: prompts are sent without a chat template.
+            base_text = llm.generate(prompt, max_new_tokens=60, do_sample=False,
+                                     chat_template=False)
+        steered_text = llm.generate(prompt, max_new_tokens=60, do_sample=False,
+                                    chat_template=False)
         print(f"  baseline: {base_text[:300]}")
         print(f"  steered:  {steered_text[:300]}")
         results["generation"] = {"baseline": base_text, "steered": steered_text}

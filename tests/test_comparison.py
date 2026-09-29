@@ -16,7 +16,7 @@ from machine_poi.steerer import QuranSteerer
 class FakeTokenizer:
     pad_token_id = 0
 
-    def __call__(self, text, return_tensors):
+    def __call__(self, text, return_tensors, add_special_tokens=True):
         return {"input_ids": torch.tensor([[1, 2]])}
 
     def decode(self, tokens, skip_special_tokens):
