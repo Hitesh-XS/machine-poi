@@ -178,7 +178,7 @@ def compare_embeddings(args):
             print(f"  Model load time: {load_time:.2f}s")
 
             # Load Quran text
-            chunks = embedder.load_quran_text("al-quran.txt", chunking="verse")
+            chunks = embedder.load_quran_text("al-quran.txt", chunk_by="verse")
             print(f"  Loaded {len(chunks)} Quran verses")
 
             # Create embeddings

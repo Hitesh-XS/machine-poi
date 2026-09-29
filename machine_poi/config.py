@@ -254,9 +254,6 @@ class SteeringDefaults:
     # Maximum domain bridges to generate
     max_domain_bridges: int = 3
     
-    # Minimum chunk length for text processing
-    min_chunk_length: int = 10
-    
     # Random seed for reproducibility
     random_seed: int = 42
     
@@ -280,7 +277,6 @@ class SteeringDefaults:
     
     # Hybrid query settings
     hybrid_query_mode: str = "hybrid"  # "vector", "graph", "hybrid", "auto"
-    hybrid_fusion_strategy: str = "interleave"  # "interleave", "graph_first", "vector_first"
 
 
 # Global defaults instance

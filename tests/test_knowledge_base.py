@@ -11,6 +11,7 @@ import pytest
 import numpy as np
 from unittest.mock import Mock, patch
 
+from machine_poi.corpus import Passage
 from machine_poi.quran_embeddings import QuranEmbeddings
 
 
@@ -36,6 +37,8 @@ class TestQuranKnowledgeBaseInit:
         
         with patch("machine_poi.knowledge_base.QuranEmbeddings") as MockEmbeddings:
             mock_embedder = Mock(spec=QuranEmbeddings)
+            mock_embedder.model_id = "fake-embedder"
+            mock_embedder.embedding_dimension.return_value = 8
             mock_embedder.load_model = Mock()
             MockEmbeddings.return_value = mock_embedder
             
@@ -60,9 +63,11 @@ class TestIndexBuilding:
         with patch("machine_poi.knowledge_base.QuranEmbeddings") as MockEmbeddings:
             # Mock embedder
             mock_embedder = Mock(spec=QuranEmbeddings)
+            mock_embedder.model_id = "fake-embedder"
+            mock_embedder.embedding_dimension.return_value = 8
             mock_embedder.load_model = Mock()
-            mock_embedder.load_quran_text.return_value = [
-                "verse 1", "verse 2", "verse 3", "verse 4", "verse 5"
+            mock_embedder.load_passages.return_value = [
+                Passage(1, ayah, ayah, f"verse {ayah}") for ayah in range(1, 6)
             ]
             mock_embedder.create_embeddings.return_value = np.random.randn(
                 5, sample_embedding_dim
@@ -80,8 +85,8 @@ class TestIndexBuilding:
         """Test that build_index uses embedder for all resolutions."""
         mock_kb.build_index(quran_path=sample_quran_path)
         
-        # Should call load_quran_text for each resolution
-        calls = mock_kb.embedder.load_quran_text.call_args_list
+        # Should load passages for each resolution
+        calls = mock_kb.embedder.load_passages.call_args_list
         chunk_types = [c.kwargs.get("chunk_by", c.args[1] if len(c.args) > 1 else None) for c in calls]
         
         # Verify all resolutions were processed
@@ -107,18 +112,20 @@ class TestQuerying:
         with patch("machine_poi.knowledge_base.QuranEmbeddings") as MockEmbeddings:
             # Mock embedder
             mock_embedder = Mock(spec=QuranEmbeddings)
+            mock_embedder.model_id = "fake-embedder"
+            mock_embedder.embedding_dimension.return_value = 8
             mock_embedder.load_model = Mock()
             
-            # Return different texts for different chunk types
+            # Return different passages for different chunk types
             def mock_load(path, chunk_by):
                 if chunk_by == "verse":
-                    return ["verse " + str(i) for i in range(10)]
+                    return [Passage(2, a, a, f"verse {a}") for a in range(1, 11)]
                 elif chunk_by == "paragraph":
-                    return ["paragraph " + str(i) for i in range(5)]
+                    return [Passage(2, a, a + 1, f"paragraph {a}") for a in range(1, 10, 2)]
                 else:
-                    return ["surah " + str(i) for i in range(2)]
-            
-            mock_embedder.load_quran_text.side_effect = mock_load
+                    return [Passage(s, 1, 5, f"surah {s}") for s in (1, 2)]
+
+            mock_embedder.load_passages.side_effect = mock_load
             mock_embedder.create_embeddings.side_effect = lambda texts, **kwargs: (
                 np.random.randn(len(texts), sample_embedding_dim).astype(np.float32)
             )
@@ -128,7 +135,7 @@ class TestQuerying:
                 persist_dir=str(temp_db_dir),
                 device="cpu",
             )
-            kb.build_index("test_quran.txt")
+            kb.build_index()
             
             return kb
 
@@ -220,6 +227,8 @@ class TestCollectionManagement:
         
         with patch("machine_poi.knowledge_base.QuranEmbeddings") as MockEmbeddings:
             mock_embedder = Mock(spec=QuranEmbeddings)
+            mock_embedder.model_id = "fake-embedder"
+            mock_embedder.embedding_dimension.return_value = 8
             mock_embedder.load_model = Mock()
             MockEmbeddings.return_value = mock_embedder
             
@@ -244,6 +253,8 @@ class TestScoreComputation:
         
         with patch("machine_poi.knowledge_base.QuranEmbeddings") as MockEmbeddings:
             mock_embedder = Mock(spec=QuranEmbeddings)
+            mock_embedder.model_id = "fake-embedder"
+            mock_embedder.embedding_dimension.return_value = 8
             mock_embedder.load_model = Mock()
             mock_embedder.create_embeddings.return_value = np.random.randn(
                 1, sample_embedding_dim

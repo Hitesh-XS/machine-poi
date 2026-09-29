@@ -6,7 +6,7 @@ for comprehensive Quranic knowledge access.
 """
 
 import logging
-from typing import Dict, List, Optional, Union, TYPE_CHECKING
+from typing import Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -15,6 +15,7 @@ from .themes import matching_keywords
 
 if TYPE_CHECKING:
     from .knowledge_base import QuranKnowledgeBase
+    from .quran_embeddings import QuranEmbeddings
     from .lightrag_adapter import QuranLightRAG
     from .graph_bridge import GraphBridgeGenerator
 
@@ -27,18 +28,18 @@ class HybridQueryResult:
     # Vector-based results (existing)
     vector_results: Dict[str, List[Dict]]
 
-    # Graph-based results (new)
+    # Graph-based results: the LightRAG answer, plus the entities and
+    # (entity, relation, neighbor) edges that bridge generation traversed
     graph_answer: Optional[str]
     graph_entities: List[str]
-    graph_relationships: List[Dict]
+    graph_relationships: List[Tuple[str, str, str]]
 
     # Generated bridges
     bridges: List[str]
     bridge_confidence: Dict[str, float]
 
-    # Fusion metadata
+    # Resolved query mode ("auto" becomes "vector" or "hybrid")
     query_mode: str
-    fusion_strategy: str
 
 
 class HybridQuranKnowledgeBase:
@@ -60,6 +61,8 @@ class HybridQuranKnowledgeBase:
         device: Optional[str] = None,
         llm_func: Optional[callable] = None,
         llm_model_name: str = "gpt-4o-mini",
+        embedder: Optional["QuranEmbeddings"] = None,
+        quran_path: Union[str, Path] = "al-quran.txt",
     ):
         """
         Initialize hybrid knowledge base.
@@ -71,6 +74,8 @@ class HybridQuranKnowledgeBase:
             device: Computation device
             llm_func: LLM function for graph extraction
             llm_model_name: LLM model name
+            embedder: Loaded embedder to share with the vector index
+            quran_path: Corpus used for the vector index and graph ingestion
         """
         self.vector_persist_dir = vector_persist_dir
         self.graph_working_dir = graph_working_dir
@@ -84,6 +89,8 @@ class HybridQuranKnowledgeBase:
 
         self._llm_func = llm_func
         self._llm_model_name = llm_model_name
+        self._embedder = embedder
+        self._quran_path = quran_path
         self._initialized = False
 
     async def initialize(self) -> None:
@@ -101,6 +108,8 @@ class HybridQuranKnowledgeBase:
             persist_dir=self.vector_persist_dir,
             embedding_model_name=self.embedding_model_name,
             device=self.device,
+            embedder=self._embedder,
+            quran_path=self._quran_path,
         )
 
         # Create embedding function for LightRAG
@@ -109,7 +118,7 @@ class HybridQuranKnowledgeBase:
             return embeddings.tolist()
 
         # Initialize graph KB (new)
-        embedding_dim = self._vector_kb.embedder.model.get_sentence_embedding_dimension()
+        embedding_dim = self._vector_kb.embedder.embedding_dimension()
         self._graph_kb = QuranLightRAG(
             working_dir=self.graph_working_dir,
             embedding_func=embedding_func,
@@ -157,12 +166,9 @@ class HybridQuranKnowledgeBase:
 
         if build_graph:
             logger.info("Building knowledge graph...")
-            # Load texts for graph ingestion
-            texts = self._vector_kb.embedder.load_quran_text(
-                quran_path,
-                chunk_by="verse"
-            )
-            await self._graph_kb.ingest_quran(texts)
+            # Prefix each verse with its reference so graph answers can cite it
+            verses = self._vector_kb.embedder.load_passages(quran_path, chunk_by="verse")
+            await self._graph_kb.ingest_quran([f"[{v.ref}] {v.text}" for v in verses])
 
     async def query(
         self,
@@ -172,7 +178,6 @@ class HybridQuranKnowledgeBase:
         n_graph_results: int = 5,
         use_bridges: bool = True,
         max_bridges: int = 3,
-        fusion_strategy: str = "interleave",
     ) -> HybridQueryResult:
         """
         Query the hybrid knowledge base.
@@ -184,7 +189,6 @@ class HybridQuranKnowledgeBase:
             n_graph_results: Number of graph results
             use_bridges: Whether to use domain bridges
             max_bridges: Maximum bridges to generate
-            fusion_strategy: How to combine results ("interleave", "graph_first", "vector_first")
 
         Returns:
             HybridQueryResult with combined results
@@ -216,6 +220,8 @@ class HybridQuranKnowledgeBase:
             )
             bridges = bridge_result.bridges
             bridge_confidence = bridge_result.confidence_scores
+            graph_entities = bridge_result.entities_found
+            graph_relationships = bridge_result.relationships_traversed
 
         # Vector retrieval
         if mode in ("vector", "hybrid"):
@@ -240,8 +246,6 @@ class HybridQuranKnowledgeBase:
                     top_k=n_graph_results,
                 )
                 graph_answer = graph_result.get("answer")
-                # Extract entities and relationships from graph result
-                # (Implementation depends on LightRAG's output format)
             except Exception as e:
                 logger.warning(f"Graph query failed: {e}")
 
@@ -253,7 +257,6 @@ class HybridQuranKnowledgeBase:
             bridges=bridges,
             bridge_confidence=bridge_confidence,
             query_mode=mode,
-            fusion_strategy=fusion_strategy,
         )
 
     def query_sync(

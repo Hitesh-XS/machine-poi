@@ -73,8 +73,8 @@ $$
 $$
 
 Each text receives equal weight after token pooling. The high-level persona path
-computes separate normalized means for verses, 19-verse paragraph chunks and
-surahs, combines them with default weights 0.50/0.35/0.15, and normalizes the
+computes separate normalized means for verses, paragraph chunks of up to 19 verses
+within a surah, and surahs, combines them with default weights 0.50/0.35/0.15, and normalizes the
 combined vector. The contrastive path normalizes `mean(positive) - mean(negative)`.
 Zero norms are handled by the underlying normalization routines; a zero vector
 has no semantic direction.

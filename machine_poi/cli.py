@@ -14,6 +14,7 @@ import argparse
 import asyncio
 from pathlib import Path
 
+from .knowledge_base import StaleIndexError
 from .steerer import InvalidConfigError, QuranSteerer, SteeringConfig
 from .config import (
     ExperimentConfig,
@@ -194,6 +195,12 @@ Examples:
         "--init-db",
         action="store_true",
         help="Initialize/Build the Knowledge Base index",
+    )
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="With --init-db, rebuild the vector index even if one exists "
+             "(required after changing --embedding or the corpus)",
     )
     parser.add_argument(
         "--mra",
@@ -425,7 +432,13 @@ def run_single_prompt(steerer: QuranSteerer, prompt: str, args):
 
 
 def main():
-    args = parse_args()
+    try:
+        run(parse_args())
+    except StaleIndexError as exc:
+        raise SystemExit(f"Stale vector index: {exc}")
+
+
+def run(args):
     if args.llm == "custom" and not args.llm_path:
         raise SystemExit("--llm custom requires --llm-path")
     print_banner()
@@ -500,7 +513,7 @@ def main():
 
     if args.init_db:
         steerer.initialize_knowledge_base()
-        steerer.knowledge_base.build_index(args.quran_path)
+        steerer.knowledge_base.build_index(args.quran_path, rebuild=args.rebuild)
         if args.build_graph and args.graph_kb:
             print("Building LightRAG graph index (this may take a while)...")
             asyncio.run(build_graph_index(steerer, args.quran_path))

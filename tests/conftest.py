@@ -26,7 +26,25 @@ def project_root():
 
 @pytest.fixture
 def sample_quran_path(tmp_path):
-    """Create a temporary Quran text file with sample verses."""
+    """A synthetic corpus with the canonical 114-surah, 6,236-verse layout.
+
+    Each line names its own reference, so tests can check verse numbering.
+    """
+    from machine_poi.corpus import SURAH_VERSE_COUNTS
+
+    lines = [
+        f"verse {surah}:{ayah}"
+        for surah, count in enumerate(SURAH_VERSE_COUNTS, start=1)
+        for ayah in range(1, count + 1)
+    ]
+    quran_file = tmp_path / "test_quran.txt"
+    quran_file.write_text("\n".join(lines), encoding="utf-8")
+    return quran_file
+
+
+@pytest.fixture
+def malformed_quran_path(tmp_path):
+    """Ten sample verses: too few lines for canonical verse numbering."""
     sample_verses = [
         "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
         "الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ",
@@ -35,13 +53,11 @@ def sample_quran_path(tmp_path):
         "إِيَّاكَ نَعْبُدُ وَإِيَّاكَ نَسْتَعِينُ",
         "اهْدِنَا الصِّرَاطَ الْمُسْتَقِيمَ",
         "صِرَاطَ الَّذِينَ أَنْعَمْتَ عَلَيْهِمْ غَيْرِ الْمَغْضُوبِ عَلَيْهِمْ وَلَا الضَّالِّينَ",
-        # Add more verses for paragraph/surah chunking tests
         "الم ذَٰلِكَ الْكِتَابُ لَا رَيْبَ فِيهِ هُدًى لِّلْمُتَّقِينَ",
         "الَّذِينَ يُؤْمِنُونَ بِالْغَيْبِ وَيُقِيمُونَ الصَّلَاةَ",
         "وَمِمَّا رَزَقْنَاهُمْ يُنفِقُونَ",
     ]
-    
-    quran_file = tmp_path / "test_quran.txt"
+    quran_file = tmp_path / "malformed_quran.txt"
     quran_file.write_text("\n".join(sample_verses), encoding="utf-8")
     return quran_file
 

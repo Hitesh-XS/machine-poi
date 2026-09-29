@@ -14,6 +14,7 @@ import numpy as np
 import torch
 
 from .config import EMBEDDING_MODELS, STEERING_DEFAULTS
+from .corpus import Passage, Resolution, group_passages, load_verses
 
 # Setup module logger
 logger = logging.getLogger("machine_poi.quran_embeddings")
@@ -27,6 +28,25 @@ class EmbeddingError(Exception):
 class QuranFileError(EmbeddingError):
     """Raised when Quran file is invalid or missing."""
     pass
+
+
+DEFAULT_CORPUS = "al-quran.txt"
+
+
+def resolve_corpus_path(file_path: Union[str, Path]) -> Path:
+    """Resolve a corpus path; only the default name falls back to the checkout.
+
+    Any other missing path is an error, so a typo cannot silently load a
+    different corpus.
+    """
+    path = Path(file_path)
+    if path.exists():
+        return path
+    if path == Path(DEFAULT_CORPUS):
+        fallback = Path(__file__).resolve().parent.parent / DEFAULT_CORPUS
+        if fallback.exists():
+            return fallback
+    raise QuranFileError(f"Quran text file not found: {file_path}")
 
 
 class LRUCache:
@@ -68,22 +88,6 @@ class QuranEmbeddings:
     """
 
     SUPPORTED_MODELS = {alias: spec["hf_path"] for alias, spec in EMBEDDING_MODELS.items()}
-
-    # Standard verse counts for all 114 Surahs
-    SURAH_VERSE_COUNTS = [
-        7, 286, 200, 176, 120, 165, 206, 75, 129, 109,
-        123, 111, 43, 52, 99, 128, 111, 110, 98, 135,
-        112, 78, 118, 64, 77, 227, 93, 88, 69, 60,
-        34, 30, 73, 54, 45, 83, 182, 88, 75, 85,
-        54, 53, 89, 59, 37, 35, 38, 29, 18, 45,
-        60, 49, 62, 55, 78, 96, 29, 22, 24, 13,
-        14, 11, 11, 18, 12, 12, 30, 52, 52, 44,
-        28, 28, 20, 56, 40, 31, 50, 40, 46, 42,
-        29, 19, 36, 25, 22, 17, 19, 26, 30, 20,
-        15, 21, 11, 8, 8, 19, 5, 8, 8, 11,
-        11, 8, 3, 9, 5, 4, 7, 3, 6, 3,
-        5, 4, 5, 6
-    ]
 
     def __init__(
         self,
@@ -127,6 +131,18 @@ class QuranEmbeddings:
         self.tokenizer = None
         self._embeddings_cache = LRUCache(max_size=STEERING_DEFAULTS.max_embedding_cache_size)
 
+    @property
+    def model_id(self) -> str:
+        """Checkpoint identity recorded with vector indexes built by this embedder."""
+        path = self.SUPPORTED_MODELS.get(self.model_name, self.model_name)
+        return f"{path}@{self.revision}" if self.revision else path
+
+    def embedding_dimension(self) -> int:
+        """Output dimension of the loaded model, loading it if needed."""
+        if self.model is None:
+            self.load_model()
+        return int(self.model.get_sentence_embedding_dimension())
+
     def load_model(self) -> None:
         """Load the embedding model."""
         from sentence_transformers import SentenceTransformer
@@ -144,85 +160,51 @@ class QuranEmbeddings:
 
         logger.info(f"Model loaded on {self.device}")
 
+    def load_passages(
+        self,
+        file_path: Union[str, Path] = "al-quran.txt",
+        chunk_by: Resolution = "verse",
+    ) -> List[Passage]:
+        """
+        Load the corpus as cited passages that never cross a surah boundary.
+
+        Args:
+            file_path: One-verse-per-line corpus with 6,236 lines. The default
+                name also resolves relative to the repository checkout.
+            chunk_by: "verse", "paragraph" (fixed windows within a surah) or "surah"
+
+        Raises:
+            QuranFileError: If the file is missing or unreadable
+            CorpusError: If the file does not have the canonical verse layout
+        """
+        file_path = resolve_corpus_path(file_path)
+        try:
+            verses = load_verses(file_path)
+        except OSError as e:
+            raise QuranFileError(f"Failed to read Quran file: {e}")
+        passages = group_passages(
+            verses, chunk_by, STEERING_DEFAULTS.paragraph_verse_count
+        )
+        logger.info(f"Loaded {len(passages)} passages from Quran ({chunk_by} mode)")
+        return passages
+
     def load_quran_text(
         self,
         file_path: Union[str, Path] = "al-quran.txt",
-        chunk_by: Literal["verse", "surah", "paragraph"] = "verse",
-        min_length: Optional[int] = None,
+        chunk_by: Resolution = "verse",
+        min_length: int = 0,
     ) -> List[str]:
         """
-        Load and chunk the Quran text.
+        Load passage texts in canonical order.
 
-        Args:
-            file_path: Path to the Quran text file
-            chunk_by: How to split the text (verse, surah, paragraph)
-            min_length: Minimum character length for a chunk (default from config)
-
-        Returns:
-            List of text chunks
-            
-        Raises:
-            QuranFileError: If the file cannot be found or read
+        Every verse is kept by default, so list positions match verse order;
+        ``min_length`` drops shorter chunks and breaks that correspondence.
         """
-        if min_length is None:
-            min_length = STEERING_DEFAULTS.min_chunk_length
-            
-        file_path = Path(file_path)
-        if not file_path.exists():
-            # Try relative to module
-            module_dir = Path(__file__).parent.parent
-            file_path = module_dir / "al-quran.txt"
-            
-        if not file_path.exists():
-            raise QuranFileError(f"Quran text file not found: {file_path}")
-
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-        except IOError as e:
-            raise QuranFileError(f"Failed to read Quran file: {e}")
-            
-        if not content.strip():
-            raise QuranFileError(f"Quran file is empty: {file_path}")
-
-        lines = [line.strip() for line in content.split("\n") if line.strip()]
-
-        if chunk_by == "verse":
-            # Each line is a verse
-            chunks = [line for line in lines if len(line) >= min_length]
-        
-        elif chunk_by == "paragraph":
-            # Group every N verses together
-            n = STEERING_DEFAULTS.paragraph_verse_count
-            chunks = []
-            for i in range(0, len(lines), n):
-                chunk = " ".join(lines[i:i+n])
-                if len(chunk) >= min_length:
-                    chunks.append(chunk)
-
-        elif chunk_by == "surah":
-            # Group by actual Surah boundaries
-            chunks = []
-            current_line = 0
-            
-            for verse_count in self.SURAH_VERSE_COUNTS:
-                if current_line >= len(lines):
-                    break
-                    
-                end_line = min(current_line + verse_count, len(lines))
-                # Skip Bismillah if it's considered a separate line in some files
-                # But here we assume strict line-per-verse mapping
-                chunk = " ".join(lines[current_line:end_line])
-                
-                if len(chunk) >= min_length:
-                    chunks.append(chunk)
-                
-                current_line = end_line
-        else:
-            chunks = lines
-
-        logger.info(f"Loaded {len(chunks)} text chunks from Quran ({chunk_by} mode)")
-        return chunks
+        return [
+            passage.text
+            for passage in self.load_passages(file_path, chunk_by)
+            if len(passage.text) >= min_length
+        ]
 
     def create_embeddings(
         self,

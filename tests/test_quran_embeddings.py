@@ -107,19 +107,26 @@ class TestTextLoading:
         
         assert len(chunks_strict) <= len(chunks_lenient)
 
-    def test_load_quran_text_file_not_found(self, tmp_path):
-        """Test handling of missing file - falls back to default al-quran.txt."""
-        from machine_poi.quran_embeddings import QuranEmbeddings
-        
+    def test_missing_explicit_path_raises_instead_of_loading_another_corpus(self, tmp_path):
+        """Only the default corpus name falls back to the checkout's copy."""
+        from machine_poi.quran_embeddings import QuranEmbeddings, QuranFileError
+
         embedder = QuranEmbeddings()
-        nonexistent = tmp_path / "nonexistent.txt"
-        
-        # The code falls back to al-quran.txt in the project root
-        # So it should return chunks from that file instead of raising
-        chunks = embedder.load_quran_text(nonexistent)
-        
-        # If fallback exists, we get chunks; otherwise would raise
-        assert isinstance(chunks, list)
+        with pytest.raises(QuranFileError):
+            embedder.load_quran_text(tmp_path / "nonexistent.txt")
+
+    def test_default_corpus_name_resolves_from_another_directory(self, tmp_path, monkeypatch):
+        from machine_poi.quran_embeddings import QuranEmbeddings
+
+        monkeypatch.chdir(tmp_path)
+        assert len(QuranEmbeddings().load_quran_text()) == 6236
+
+    def test_malformed_corpus_is_rejected(self, malformed_quran_path):
+        from machine_poi.corpus import CorpusError
+        from machine_poi.quran_embeddings import QuranEmbeddings
+
+        with pytest.raises(CorpusError, match="expected 6236 verses.*found 10"):
+            QuranEmbeddings().load_quran_text(malformed_quran_path)
 
 
 class TestEmbeddingCreation:

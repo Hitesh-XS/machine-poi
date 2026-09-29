@@ -68,9 +68,19 @@ answer = steerer.generate(
 print(answer)
 ```
 
-MRA retrieves verse, passage and surah context and adds it to the prompt. This
-path assembles its own prompt; check checkpoint formatting when designing an
-experiment. Retrieval-derived activation steering is a separate, explicit opt-in:
+MRA retrieves verse, passage and surah context and adds it to the prompt, each
+item prefixed with its reference, such as `[2:255]` or `[2:254-272]`. Passages are
+windows of up to 19 verses that never cross a surah boundary. The corpus file must
+hold exactly 6,236 lines, one verse per line in mushaf order; any other layout
+raises `CorpusError` rather than misnumbering verses. An explicit `--quran-path`
+that does not exist is an error; only the default `al-quran.txt` falls back to the
+checkout's copy. Each index collection records the embedding model, its
+dimension, the corpus SHA-256 and a schema version. If any differ from the current
+configuration, for example after changing `--embedding`, queries and builds raise
+`StaleIndexError` until you run `machine-poi --init-db --rebuild`. Indexes built
+before this check existed need one rebuild. The steerer shares its loaded embedder
+with the index instead of loading a second copy. This path assembles its own
+prompt; check checkpoint formatting when designing an experiment. Retrieval-derived activation steering is a separate, explicit opt-in:
 
 ```python
 answer = steerer.generate(
@@ -123,9 +133,15 @@ async def main():
 asyncio.run(main())
 ```
 
-`query_mode` accepts `vector`, `graph`, `hybrid` or `auto`. Async retrieval completes
-before the synchronous steering session starts; do not hold that session across
-an `await`. Provider calls and index storage need their own authorization boundary
+`query_mode` accepts `vector`, `graph`, `hybrid` or `auto`. Graph bridges start
+from seed entities: concepts mapped from query terms, plus graph labels named in the
+query. They are the seeds' direct neighbors in the LightRAG graph, ranked by edge
+weight, with thematic relation types (such as "requires" or "leads to") counted
+double. `HybridQueryResult.graph_entities` and `graph_relationships` report the
+seeds and edges used. Without a usable graph the bridges fall back to embedding
+similarity with the curated themes, then to the unverified seed concepts; the
+confidence scores show which source applied. Async retrieval completes before the
+synchronous steering session starts; do not hold that session across an `await`. Provider calls and index storage need their own authorization boundary
 when incorporated into an agent host.
 
 ## Injection semantics
@@ -230,7 +246,7 @@ configures the graph provider and enables graph index building with
 | `--seed`, `--greedy` | Seed shared by both comparison arms (default 42); decode greedily instead of sampling. Comparisons print the settings used |
 | `--interactive`, `--compare`, `--prompt` | Interactive generation, predefined comparisons, or one comparison prompt |
 | `--reasoning` | Model-specific prompt/decoding behavior; inspect it when matching experimental conditions |
-| `--init-db`, `--mra` | Build vector index; add MRA context on every generation path |
+| `--init-db`, `--rebuild`, `--mra` | Build the vector index (`--rebuild` replaces an existing one); add MRA context on every generation path |
 | `--graph-kb`, `--build-graph` | Configure graph provider; build graph with `--init-db` |
 | `--llm-provider`, `--llm-api-model` | Provider (`openai`, `gemini`, `ollama`) and its model name |
 
