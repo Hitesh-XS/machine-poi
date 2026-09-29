@@ -203,9 +203,9 @@ for an embedding host are:
   **target projection on the unit vector**; zero removes the existing projection
   and is not the same as disabling steering. Diagnostics compute the actual
   change for add, blend, clamp and replace. Replace remains a research mode.
-- `QuranSteerer.last_run_diagnostics` retains scalar summaries after `generate`
-  and `generate_with_graph`; temporary captured activations are cleared during
-  restoration. Low-level comparison does not update that field.
+- `QuranSteerer.last_run_diagnostics` retains scalar summaries after `generate`,
+  `compare` and `generate_with_graph`, averaged over every steered token of that
+  run. Hooks keep running statistics instead of copies of hidden states.
 - Retrieval is quoted, bounded reference data. Dynamic steering from retrieval
   now defaults off. A trusted-corpus experiment must explicitly pass both
   `use_dynamic_steering=True` and `trusted_retrieval=True`. Quoting is not an

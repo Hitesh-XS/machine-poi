@@ -234,6 +234,9 @@ class SteeringDefaults:
     
     # Sample size for computing mean activations
     activation_sample_size: int = 50
+
+    # Texts per forward pass when pooling activations
+    activation_batch_size: int = 8
     
     # Sample size for Quran Persona (larger for comprehensive coverage)
     persona_sample_size: int = 100

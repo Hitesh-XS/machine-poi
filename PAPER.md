@@ -116,15 +116,15 @@ it does not verify the corpus or detect malicious instructions.
 
 `SteeredLLM` serializes inference and hook mutations. High-level generation scopes
 temporary steering to a session, restores prior vectors/modes/enabled flags on
-success or failure, and clears temporary activation captures. Registration
-replaces a layer's previous handle. Activation extraction disables steering and
-removes capture hooks in `finally`. Async graph retrieval finishes before entering
+success or failure. Registration replaces a layer's previous handle. Activation
+pooling runs in right-padded batches with steering disabled and removes its
+hooks in `finally`. Async graph retrieval finishes before entering
 the synchronous session.
 
 Pointwise diagnostics report activation/vector norms, cosine alignment,
 projection magnitude and relative perturbation computed from the actual update
-for each injection mode. High-level generation retains these scalar summaries in
-`last_run_diagnostics`. Attention-transport experiments summarize a constructed
+for each injection mode, averaged over every steered token of a generation.
+High-level generation retains these scalar summaries in `last_run_diagnostics`. Attention-transport experiments summarize a constructed
 connection using variation/commutator terms and holonomy. Those quantities are
 research diagnostics, with no validated threshold for authorization or safety.
 

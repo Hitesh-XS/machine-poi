@@ -258,12 +258,12 @@ class TestComputeDynamicSteering:
         
         # Mock activations extraction
         # Returns Dict[layer_idx, tensor]
-        def mock_extract(text):
+        def mock_pooled(texts, **kwargs):
             return {
-                i: torch.randn(1, 10, sample_hidden_dim) # [batch, seq, dim]
+                i: torch.randn(len(texts), sample_hidden_dim)  # [texts, dim]
                 for i in range(sample_num_layers)
             }
-        steerer.llm.extract_layer_activations = mock_extract
+        steerer.llm.pooled_layer_means = mock_pooled
         
         steerer.device = "cpu"
         
@@ -367,12 +367,12 @@ class TestPrepareQuranSteering:
         steerer.llm.clear_steering = Mock()
         
         # Mock extractions
-        def mock_extract(text):
+        def mock_pooled(texts, **kwargs):
             return {
-                i: torch.randn(1, 5, sample_hidden_dim) 
+                i: torch.randn(len(texts), sample_hidden_dim)  # [texts, dim]
                 for i in range(sample_num_layers)
             }
-        steerer.llm.extract_layer_activations = mock_extract
+        steerer.llm.pooled_layer_means = mock_pooled
         
         steerer.device = "cpu"
         
@@ -426,12 +426,12 @@ class TestPrepareThematicSteering:
         steerer.llm.register_steering_hook = Mock()
         steerer.llm.clear_steering = Mock()
         
-        def mock_extract(text):
+        def mock_pooled(texts, **kwargs):
             return {
-                i: torch.randn(1, 5, sample_hidden_dim) 
+                i: torch.randn(len(texts), sample_hidden_dim)  # [texts, dim]
                 for i in range(sample_num_layers)
             }
-        steerer.llm.extract_layer_activations = mock_extract
+        steerer.llm.pooled_layer_means = mock_pooled
         
         # Mock Quran embeddings for search
         steerer.quran_embeddings = {
@@ -478,12 +478,12 @@ class TestPrepareQuranPersona:
         steerer.llm.register_steering_hook = Mock()
         steerer.llm.clear_steering = Mock()
         
-        def mock_extract(text):
+        def mock_pooled(texts, **kwargs):
             return {
-                i: torch.randn(1, 5, sample_hidden_dim) 
+                i: torch.randn(len(texts), sample_hidden_dim)  # [texts, dim]
                 for i in range(sample_num_layers)
             }
-        steerer.llm.extract_layer_activations = mock_extract
+        steerer.llm.pooled_layer_means = mock_pooled
         
         steerer.device = "cpu"
         

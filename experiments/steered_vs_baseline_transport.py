@@ -157,7 +157,7 @@ def mean_activation_vectors(
     capture_hooks = {}
     handles = []
     for layer_idx in layers:
-        hook = ActivationHook(layer_idx=layer_idx, steering_vector=None)
+        hook = ActivationHook(layer_idx=layer_idx, steering_vector=None, capture=True)
         module = llm._get_layer_module(layer_idx)
         handles.append(module.register_forward_hook(hook))
         capture_hooks[layer_idx] = hook

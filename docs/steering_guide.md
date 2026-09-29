@@ -170,14 +170,19 @@ injection mode is established as universally more fluent or more stable. Read th
 
 ## Diagnostics and state lifetime
 
-After `QuranSteerer.generate` or `generate_with_graph`, read
-`steerer.last_run_diagnostics`. It contains scalar summaries captured before the
-session restores the previous hooks and drops temporary activation tensors. A
-new high-level generation resets this field; it is not a per-request history.
+After `QuranSteerer.generate`, `compare` or `generate_with_graph`, read
+`steerer.last_run_diagnostics`. Each steered layer keeps running statistics over
+every token it steered in the latest generation, prompt and decode steps alike,
+so the summary describes the whole output rather than its last token. A new
+high-level generation resets this field; it is not a per-request history.
 
-At the low level, `SteeredLLM.get_steering_diagnostics()` summarizes currently
-captured, enabled hooks after a forward pass. It uses the actual add/blend/replace/
-clamp delta. `get_attention_transport_diagnostics(prompt)` makes a separate
+At the low level, `SteeredLLM.get_steering_diagnostics()` summarizes enabled
+hooks' statistics since the last `generate` call began. It uses the actual
+add/blend/replace/clamp delta. Hooks no longer copy hidden states; register with
+`capture=True` to keep the latest hidden states in `captured_activation`.
+Vector preparation pools activations in batches with `pooled_layer_means`, which
+right-pads each batch, masks padding out of the mean and matches one-text-at-a-time
+pooling to floating-point tolerance. `get_attention_transport_diagnostics(prompt)` makes a separate
 forward pass; wrap it in `steering_disabled()` for its baseline. Geometry and
 perturbation metrics are research measurements, not action authorization signals.
 

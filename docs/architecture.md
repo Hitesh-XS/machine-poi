@@ -117,7 +117,7 @@ must not span an `await`. Re-registering a layer replaces its handle. Activation
 extraction runs unsteered and removes temporary capture hooks in `finally`.
 
 `last_run_diagnostics` retains scalar summaries after high-level generation;
-restoration clears captured activation tensors. This is mutable per-instance
+hooks accumulate running statistics rather than copying hidden states. This is mutable per-instance
 telemetry, not an immutable per-request audit record. Direct access to the wrapped
 model or concurrent mutation outside these APIs bypasses the serialization
 contract.

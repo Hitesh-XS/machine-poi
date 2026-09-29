@@ -33,6 +33,78 @@ class LayerSteeringDiagnostics:
     relative_perturbation: float
 
 
+class SteeringStats:
+    """Running per-token steering statistics for one layer.
+
+    Accumulates over every token the hook steers, across prefill and decode
+    steps, so a summary describes a whole generation rather than its last
+    forward pass.
+    """
+
+    def __init__(self, eps: float = 1e-8):
+        self.eps = eps
+        self.reset()
+
+    def reset(self) -> None:
+        self.tokens = 0
+        self.activation_norm_sum = 0.0
+        self.cosine_sum = 0.0
+        self.projection_sum = 0.0
+        self.delta_norm_sum = 0.0
+
+    def update(
+        self,
+        activation: torch.Tensor,
+        steering_vector: torch.Tensor,
+        coefficient: float = 1.0,
+        injection_mode: str = "add",
+    ) -> None:
+        """Add the pre-steering hidden states of one forward pass."""
+        if activation.shape[-1] != steering_vector.shape[-1]:
+            raise ValueError(
+                "Activation hidden dimension must match steering vector dimension: "
+                f"{activation.shape[-1]} != {steering_vector.shape[-1]}"
+            )
+        eps = self.eps
+        hidden = activation.detach().float().reshape(-1, activation.shape[-1])
+        vector = steering_vector.detach().float().to(hidden.device)
+        unit_vector = vector / vector.norm().clamp_min(eps)
+        cosine = torch.nn.functional.cosine_similarity(
+            hidden, unit_vector.unsqueeze(0).expand_as(hidden), dim=-1, eps=eps
+        )
+        projection = torch.matmul(hidden, unit_vector)
+
+        if injection_mode == "add":
+            delta = (vector * coefficient).expand_as(hidden)
+        elif injection_mode == "blend":
+            delta = coefficient * (vector - hidden)
+        elif injection_mode == "replace":
+            delta = vector - hidden
+        elif injection_mode == "clamp":
+            delta = (coefficient - projection).unsqueeze(-1) * unit_vector
+        else:
+            raise ValueError("Unknown injection mode")
+
+        self.tokens += hidden.shape[0]
+        self.activation_norm_sum += float(hidden.norm(dim=-1).sum())
+        self.cosine_sum += float(cosine.sum())
+        self.projection_sum += float(projection.abs().sum())
+        self.delta_norm_sum += float(delta.norm(dim=-1).sum())
+
+    def summary(self, steering_vector: torch.Tensor) -> Optional[LayerSteeringDiagnostics]:
+        if self.tokens == 0:
+            return None
+        activation_norm = self.activation_norm_sum / self.tokens
+        return LayerSteeringDiagnostics(
+            activation_norm=activation_norm,
+            steering_norm=float(steering_vector.detach().float().norm()),
+            mean_cosine_similarity=self.cosine_sum / self.tokens,
+            mean_projection_magnitude=self.projection_sum / self.tokens,
+            relative_perturbation=(self.delta_norm_sum / self.tokens)
+            / max(activation_norm, self.eps),
+        )
+
+
 def summarize_layer_steering(
     activation: torch.Tensor,
     steering_vector: torch.Tensor,
@@ -49,46 +121,9 @@ def summarize_layer_steering(
         coefficient: Effective steering coefficient applied to the vector.
         eps: Numerical-stability constant.
     """
-    if activation.shape[-1] != steering_vector.shape[-1]:
-        raise ValueError(
-            "Activation hidden dimension must match steering vector dimension: "
-            f"{activation.shape[-1]} != {steering_vector.shape[-1]}"
-        )
-
-    hidden = activation.detach().float()
-    vector = steering_vector.detach().float()
-
-    flat_hidden = hidden.reshape(-1, hidden.shape[-1])
-    hidden_norms = flat_hidden.norm(dim=-1)
-    vector_norm = vector.norm()
-    unit_vector = vector / vector_norm.clamp_min(eps)
-
-    cosine = torch.nn.functional.cosine_similarity(
-        flat_hidden,
-        unit_vector.unsqueeze(0).expand_as(flat_hidden),
-        dim=-1,
-        eps=eps,
-    )
-    projection = torch.matmul(flat_hidden, unit_vector)
-
-    if injection_mode == "add":
-        delta = (vector * coefficient).expand_as(flat_hidden)
-    elif injection_mode == "blend":
-        delta = coefficient * (vector - flat_hidden)
-    elif injection_mode == "replace":
-        delta = vector - flat_hidden
-    elif injection_mode == "clamp":
-        delta = (coefficient - projection).unsqueeze(-1) * unit_vector
-    else:
-        raise ValueError("Unknown injection mode")
-    activation_norm = hidden_norms.mean()
-    return LayerSteeringDiagnostics(
-        activation_norm=float(activation_norm.item()),
-        steering_norm=float(vector_norm.item()),
-        mean_cosine_similarity=float(cosine.mean().item()),
-        mean_projection_magnitude=float(projection.abs().mean().item()),
-        relative_perturbation=float((delta.norm(dim=-1).mean() / activation_norm.clamp_min(eps)).item()),
-    )
+    stats = SteeringStats(eps)
+    stats.update(activation, steering_vector, coefficient, injection_mode)
+    return stats.summary(steering_vector)
 
 
 @dataclass(frozen=True)
@@ -310,16 +345,23 @@ def pooled_non_abelian_ratio(
 
 def summarize_steering_hooks(hooks: Dict[int, object]) -> Dict[int, LayerSteeringDiagnostics]:
     """
-    Summarize all hooks that expose captured activations and steering vectors.
+    Summarize hooks from their running statistics, or from a captured
+    activation when a hook has no statistics.
 
     The function accepts generic hook-like objects so tests and downstream tools
     can reuse it without importing the runtime LLM wrapper.
     """
     diagnostics: Dict[int, LayerSteeringDiagnostics] = {}
     for layer_idx, hook in hooks.items():
-        activation: Optional[torch.Tensor] = getattr(hook, "captured_activation", None)
         steering_vector: Optional[torch.Tensor] = getattr(hook, "steering_vector", None)
-        if activation is None or steering_vector is None:
+        if steering_vector is None:
+            continue
+        stats = getattr(hook, "stats", None)
+        if isinstance(stats, SteeringStats) and stats.tokens:
+            diagnostics[layer_idx] = stats.summary(steering_vector)
+            continue
+        activation: Optional[torch.Tensor] = getattr(hook, "captured_activation", None)
+        if activation is None:
             continue
         coefficient = float(getattr(hook, "coefficient", 1.0))
         diagnostics[layer_idx] = summarize_layer_steering(

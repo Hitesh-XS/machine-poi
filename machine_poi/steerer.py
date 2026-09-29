@@ -599,41 +599,16 @@ class QuranSteerer:
             logger.warning("No texts to process for dynamic steering")
             return None
 
-        # Compute activations
-        layer_activations: Dict[int, List[torch.Tensor]] = {}
-        processed_weights: List[float] = []
-
-        for item in texts_to_process:
-            with torch.no_grad():
-                activations = self.llm.extract_layer_activations(item["text"])
-            
-            for layer_idx, act in activations.items():
-                if layer_idx not in layer_activations:
-                    layer_activations[layer_idx] = []
-                
-                # Mean pooling over sequence
-                mean_act = act.squeeze(0).mean(dim=0)
-                layer_activations[layer_idx].append(mean_act)
-            
-            processed_weights.append(item["weight"])
-
-        # Create weighted mean vector
-        weights = torch.tensor(processed_weights, device=self.device)
+        weights = torch.tensor([item["weight"] for item in texts_to_process], dtype=torch.float32)
         if not torch.isfinite(weights).all() or (weights < 0).any() or weights.sum() <= 0:
             raise InvalidConfigError("Retrieval weights must be finite, nonnegative and sum above zero")
         weights = weights / weights.sum()
-        
-        dynamic_vectors: Dict[int, torch.Tensor] = {}
-        for layer_idx, act_list in layer_activations.items():
-            # Stack: [num_items, hidden_dim]
-            stacked = torch.stack(act_list)
-            
-            # Weighted average
-            weighted_mean = torch.sum(stacked * weights.unsqueeze(-1), dim=0)
-            
-            # Normalize
-            weighted_mean = torch.nn.functional.normalize(weighted_mean, dim=-1)
-            dynamic_vectors[layer_idx] = weighted_mean
+
+        pooled = self._pooled_activations([item["text"] for item in texts_to_process])
+        dynamic_vectors: Dict[int, torch.Tensor] = {
+            layer_idx: self._unit(torch.sum(stacked * weights.unsqueeze(-1), dim=0))
+            for layer_idx, stacked in pooled.items()
+        }
 
         # Cleanup after processing
         self._cleanup_memory()
@@ -704,6 +679,16 @@ class QuranSteerer:
                 coefficient=effective_coefficient,
                 injection_mode=self.config.injection_mode,
             )
+
+    def _pooled_activations(self, texts: List[str]) -> Dict[int, torch.Tensor]:
+        """Per-text mean activations at every layer, {layer: [num_texts, hidden]}."""
+        return self.llm.pooled_layer_means(
+            list(texts), batch_size=STEERING_DEFAULTS.activation_batch_size
+        )
+
+    def _unit(self, vector: torch.Tensor) -> torch.Tensor:
+        """Normalize a pooled direction and place it on the steering device."""
+        return torch.nn.functional.normalize(vector, dim=-1).to(self.device)
 
     def _cache_metadata(self, recipe, **parameters):
         revision = self.llm_revision
@@ -782,31 +767,10 @@ class QuranSteerer:
             selected_texts = texts
 
         logger.info("Computing mean activations from Quran text...")
-        
-        layer_activations: Dict[int, List[torch.Tensor]] = {}
-        
-        for i, text in enumerate(selected_texts):
-            if i % 10 == 0:
-                logger.debug(f"Processing {i}/{len(selected_texts)}...")
-                
-            with torch.no_grad():
-                activations = self.llm.extract_layer_activations(text)
-                
-            for layer_idx, act in activations.items():
-                if layer_idx not in layer_activations:
-                    layer_activations[layer_idx] = []
-                
-                # Mean pooling
-                mean_act = act.squeeze(0).mean(dim=0)
-                layer_activations[layer_idx].append(mean_act)
-
-        # Compute global mean per layer
-        self.steering_vectors = {}
-        for layer_idx, act_list in layer_activations.items():
-            stacked = torch.stack(act_list)
-            global_mean = stacked.mean(dim=0)
-            global_mean = torch.nn.functional.normalize(global_mean, dim=-1)
-            self.steering_vectors[layer_idx] = global_mean
+        pooled = self._pooled_activations(list(selected_texts))
+        self.steering_vectors = {
+            layer_idx: self._unit(stacked.mean(dim=0)) for layer_idx, stacked in pooled.items()
+        }
 
         if cache_path:
             self._save_vectors(cache_path, metadata)
@@ -972,25 +936,10 @@ class QuranSteerer:
                 rng = np.random.RandomState(STEERING_DEFAULTS.random_seed)
                 texts = list(rng.choice(texts, size=sample_size, replace=False))
             
-            layer_acts: Dict[int, List[torch.Tensor]] = {}
-            
-            for text in texts:
-                with torch.no_grad():
-                    activations = self.llm.extract_layer_activations(text)
-                    
-                for layer_idx, act in activations.items():
-                    if layer_idx not in layer_acts:
-                        layer_acts[layer_idx] = []
-                    mean_act = act.squeeze(0).mean(dim=0)
-                    layer_acts[layer_idx].append(mean_act)
-            
-            # Compute mean for this resolution
-            resolution_activations[resolution] = {}
-            for layer_idx, act_list in layer_acts.items():
-                stacked = torch.stack(act_list)
-                mean_vec = stacked.mean(dim=0)
-                mean_vec = torch.nn.functional.normalize(mean_vec, dim=-1)
-                resolution_activations[resolution][layer_idx] = mean_vec
+            pooled = self._pooled_activations(texts)
+            resolution_activations[resolution] = {
+                layer_idx: self._unit(stacked.mean(dim=0)) for layer_idx, stacked in pooled.items()
+            }
             
             # Cleanup between resolutions
             self._cleanup_memory()
@@ -1348,8 +1297,9 @@ class ContrastiveQuranSteerer(QuranSteerer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.contrastive_extractor: Optional[ContrastiveSteeringExtractor] = None
-        self.positive_activations: Optional[Dict[int, List[torch.Tensor]]] = None
-        self.negative_activations: Optional[Dict[int, List[torch.Tensor]]] = None
+        # Per-text pooled activations, {layer: [num_texts, hidden]}
+        self.positive_activations: Optional[Dict[int, torch.Tensor]] = None
+        self.negative_activations: Optional[Dict[int, torch.Tensor]] = None
 
     @serialized
     def prepare_contrastive_steering(
@@ -1392,38 +1342,9 @@ class ContrastiveQuranSteerer(QuranSteerer):
                 device=self.device
             )
         
-        # Extract positive activations
-        logger.info("Extracting positive activations...")
-        self.positive_activations = {}
-        for i, text in enumerate(positive_texts):
-            if i % 5 == 0:
-                logger.debug(f"Processing positive {i}/{len(positive_texts)}...")
-            
-            with torch.no_grad():
-                activations = self.llm.extract_layer_activations(text)
-            
-            for layer_idx, act in activations.items():
-                if layer_idx not in self.positive_activations:
-                    self.positive_activations[layer_idx] = []
-                # Mean pool over sequence
-                mean_act = act.squeeze(0).mean(dim=0)
-                self.positive_activations[layer_idx].append(mean_act)
-        
-        # Extract negative activations
-        logger.info("Extracting negative activations...")
-        self.negative_activations = {}
-        for i, text in enumerate(negative_texts):
-            if i % 5 == 0:
-                logger.debug(f"Processing negative {i}/{len(negative_texts)}...")
-            
-            with torch.no_grad():
-                activations = self.llm.extract_layer_activations(text)
-            
-            for layer_idx, act in activations.items():
-                if layer_idx not in self.negative_activations:
-                    self.negative_activations[layer_idx] = []
-                mean_act = act.squeeze(0).mean(dim=0)
-                self.negative_activations[layer_idx].append(mean_act)
+        logger.info("Extracting positive and negative activations...")
+        self.positive_activations = self._pooled_activations(positive_texts)
+        self.negative_activations = self._pooled_activations(negative_texts)
         
         # Compute contrastive vectors: mean(positive) - mean(negative)
         logger.info("Computing contrastive steering vectors...")
@@ -1433,19 +1354,9 @@ class ContrastiveQuranSteerer(QuranSteerer):
             if layer_idx not in self.negative_activations:
                 continue
                 
-            pos_stack = torch.stack(self.positive_activations[layer_idx])
-            neg_stack = torch.stack(self.negative_activations[layer_idx])
-            
-            pos_mean = pos_stack.mean(dim=0)
-            neg_mean = neg_stack.mean(dim=0)
-            
-            # Contrastive difference
-            contrastive_vec = pos_mean - neg_mean
-            
-            # Normalize
-            contrastive_vec = torch.nn.functional.normalize(contrastive_vec, dim=-1)
-            
-            self.steering_vectors[layer_idx] = contrastive_vec
+            pos_mean = self.positive_activations[layer_idx].mean(dim=0)
+            neg_mean = self.negative_activations[layer_idx].mean(dim=0)
+            self.steering_vectors[layer_idx] = self._unit(pos_mean - neg_mean)
             
             # Also compute for the extractor
             self.contrastive_extractor.compute_from_activations(
