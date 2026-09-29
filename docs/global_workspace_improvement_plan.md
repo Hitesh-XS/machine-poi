@@ -53,7 +53,7 @@ Comparing these per-head profiles with steering enabled vs. disabled measures ch
 
 The default Quran Persona and Quran steering paths should continue to rely on mean activations extracted from the steered LLM, rather than uncalibrated random projection from embedding space. Projection-based utilities should be treated as experimental unless calibrated.
 
-**Status:** Mean, persona and contrastive high-level paths use unsteered model activations; projection utilities remain available for research. Future implementation should add runtime warnings to projection-based paths. Centering/normalization and model-specific output checks still matter: using model-native activations alone does not establish semantic selectivity.
+**Status:** Mean, persona and contrastive high-level paths use unsteered model activations. The embedding-projection extractors were removed in improvement-plan Phase 3 (M6). Centering/normalization and model-specific output checks still matter: using model-native activations alone does not establish semantic selectivity.
 
 ### 4. Add a workspace audit mode
 

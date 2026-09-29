@@ -19,7 +19,6 @@ from dataclasses import asdict, dataclass
 
 from .controls import neutral_texts as neutral_control_texts, texts_sha256, unique_texts
 from .quran_embeddings import QuranEmbeddings, QuranFileError, resolve_corpus_path
-from .steering_vectors import SteeringVectorExtractor, ContrastiveSteeringExtractor
 from .llm_wrapper import SteeredLLM
 from .steering_cache import load_vectors, save_vectors
 from .retrieval_context import quote_retrieval
@@ -237,7 +236,6 @@ class QuranSteerer:
         # Components (loaded lazily)
         self.embedder: Optional[QuranEmbeddings] = None
         self.llm: Optional[SteeredLLM] = None
-        self.vector_extractor: Optional[SteeringVectorExtractor] = None
         self.knowledge_base: Optional[QuranKnowledgeBase] = None
         self.hybrid_kb: Optional[HybridQuranKnowledgeBase] = None
         self.graph_bridge_generator: Optional[GraphBridgeGenerator] = None
@@ -1301,7 +1299,6 @@ class ContrastiveQuranSteerer(QuranSteerer):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.contrastive_extractor: Optional[ContrastiveSteeringExtractor] = None
         # Per-text pooled activations, {layer: [num_texts, hidden]}
         self.positive_activations: Optional[Dict[int, torch.Tensor]] = None
         self.negative_activations: Optional[Dict[int, torch.Tensor]] = None
@@ -1345,13 +1342,6 @@ class ContrastiveQuranSteerer(QuranSteerer):
             
         logger.info(f"Computing contrastive vectors from {len(positive_texts)} positive and {len(negative_texts)} negative examples...")
         
-        # Initialize contrastive extractor
-        if self.contrastive_extractor is None:
-            self.contrastive_extractor = ContrastiveSteeringExtractor(
-                target_dim=self.llm.hidden_size,
-                device=self.device
-            )
-        
         logger.info("Extracting positive and negative activations...")
         self.positive_activations = self._pooled_activations(positive_texts)
         self.negative_activations = self._pooled_activations(negative_texts)
@@ -1367,13 +1357,6 @@ class ContrastiveQuranSteerer(QuranSteerer):
             pos_mean = self.positive_activations[layer_idx].mean(dim=0)
             neg_mean = self.negative_activations[layer_idx].mean(dim=0)
             self.steering_vectors[layer_idx] = self._unit(pos_mean - neg_mean)
-            
-            # Also compute for the extractor
-            self.contrastive_extractor.compute_from_activations(
-                positive_activations=self.positive_activations[layer_idx],
-                negative_activations=self.negative_activations[layer_idx],
-                layer_idx=layer_idx,
-            )
         
         # Cache if requested
         if cache_path:

@@ -582,3 +582,13 @@ class TestGenerateAndCompare:
         assert isinstance(steered, str)
         assert isinstance(baseline, str)
         assert generation_steerer.llm.generate.call_count == 2
+
+
+def test_embedding_projection_extractors_are_gone():
+    """Vectors come from model activations; no path projects embeddings into the model."""
+    import importlib.util
+
+    import machine_poi
+
+    assert importlib.util.find_spec("machine_poi.steering_vectors") is None
+    assert not {"SteeringVectorExtractor", "ContrastiveSteeringExtractor"} & set(machine_poi.__all__)
