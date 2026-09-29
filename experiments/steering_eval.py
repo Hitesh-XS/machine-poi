@@ -35,6 +35,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -217,6 +218,21 @@ def provenance(steerer: QuranSteerer, spec: dict, spec_text: str) -> dict:
 ARC_ROWS = "https://datasets-server.huggingface.co/rows"
 
 
+def fetch_json(url: str, attempts: int = 5) -> dict:
+    """GET JSON, retrying server errors and dropped connections with backoff."""
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as exc:
+            if exc.code < 500 or attempt == attempts - 1:
+                raise
+        except urllib.error.URLError:
+            if attempt == attempts - 1:
+                raise
+        time.sleep(2 ** (attempt + 1))
+
+
 def fetch_arc_easy(n_items: int, seed: int, cache_dir: Path) -> tuple:
     """A seeded sample of ARC-Easy test questions, cached locally (not committed)."""
     cache = cache_dir / "arc_easy_test.json"
@@ -229,17 +245,13 @@ def fetch_arc_easy(n_items: int, seed: int, cache_dir: Path) -> tuple:
                 "dataset": "allenai/ai2_arc", "config": "ARC-Easy", "split": "test",
                 "offset": len(rows), "length": 100,
             })
-            with urllib.request.urlopen(f"{ARC_ROWS}?{query}", timeout=60) as response:
-                page = json.load(response)
+            page = fetch_json(f"{ARC_ROWS}?{query}")
             rows += [item["row"] for item in page["rows"]]
             if len(rows) >= page["num_rows_total"] or not page["rows"]:
                 break
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache.write_text(json.dumps(rows), encoding="utf-8")
-    with urllib.request.urlopen(
-        "https://huggingface.co/api/datasets/allenai/ai2_arc", timeout=60
-    ) as response:
-        dataset_sha = json.load(response).get("sha")
+    dataset_sha = fetch_json("https://huggingface.co/api/datasets/allenai/ai2_arc").get("sha")
     rng = random.Random(seed)
     sample = rng.sample(rows, min(n_items, len(rows)))
     items = [

@@ -138,6 +138,31 @@ def test_transport_prompts_rotate_through_categories(harness):
     assert len(harness.round_robin(prompts, 20)) == 9
 
 
+def test_downloads_retry_server_errors_only(harness, monkeypatch):
+    import io
+    import urllib.error
+
+    calls = []
+
+    def urlopen(url, timeout):
+        calls.append(url)
+        if len(calls) < 3:
+            raise urllib.error.HTTPError(url, 502, "Bad Gateway", {}, None)
+        return io.StringIO('{"ok": true}')
+
+    monkeypatch.setattr(harness.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(harness.time, "sleep", lambda seconds: None)
+    assert harness.fetch_json("https://example.test") == {"ok": True}
+    assert len(calls) == 3
+
+    def not_found(url, timeout):
+        raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(harness.urllib.request, "urlopen", not_found)
+    with pytest.raises(urllib.error.HTTPError):
+        harness.fetch_json("https://example.test")
+
+
 def test_ratings_are_scored_with_agreement(harness, tmp_path):
     key = tmp_path / "key.json"
     key.write_text(json.dumps({"items": {
