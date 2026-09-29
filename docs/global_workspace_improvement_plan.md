@@ -59,7 +59,7 @@ The default Quran Persona and Quran steering paths should continue to rely on me
 
 A future CLI mode should compare baseline and steered generations across prompts and report religious-reference intensity, refusal changes, length shifts, and diagnostics.
 
-**Status:** Planned. The diagnostics module provides a foundation for this mode.
+**Status:** Implemented as `experiments/steering_eval.py` ([evaluation guide](evaluation.md)). It compares a baseline with steered and retrieval conditions on held-out English and Arabic prompts and reports script shifts, degeneration, NLL under the unsteered model, ARC-Easy accuracy, an embedding thematic proxy, transport and dose attainment, with bootstrap intervals and provenance. Religious-reference intensity is judged by human raters on a blinded sheet rather than by keyword counts; refusal changes are not yet measured.
 
 ### 5. Add counterfactual reflection experiments
 
