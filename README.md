@@ -111,6 +111,7 @@ steering defaults off and requires an explicit trusted-corpus opt-in.
 | [Containment plan](docs/rogue_agent_containment_plan.md) | Baseline findings, delivered slices and remaining deployment gates |
 | [Research note](PAPER.md) | Implemented steering methods and the evidence supporting current claims |
 | [Workspace research roadmap](docs/global_workspace_improvement_plan.md) | Diagnostic work and experiments still planned |
+| [Improvement plan](docs/improvement_plan.md) | Whole-repository review findings and phased fixes |
 | [Geometry literature notes](docs/curvature_literature_roadmap_review.md) | Research leads; proposed connections require validation |
 
 ## Repository map
