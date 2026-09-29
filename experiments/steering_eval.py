@@ -149,7 +149,7 @@ def load_prompts(path: Path, split: str) -> list:
 
 
 def tuning_texts() -> list:
-    """Texts used to build, center or calibrate vectors, or in earlier experiments."""
+    """Control and calibration sentences, and prompts from earlier experiments."""
     from steered_vs_baseline_transport import DEFAULT_PROMPTS, NEUTRAL_SENTENCES
 
     texts = list(calibration_texts()) + neutral_texts("ar") + neutral_texts("en")

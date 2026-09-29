@@ -104,10 +104,13 @@ steering defaults off and requires an explicit trusted-corpus opt-in.
   had zero false blocks and one review request. The
   [report](evals/rogue_agent/results.json) evaluates already-proposed actions;
   it does not measure a model's resistance to prompt injection.
-- **Steering behavior:** the committed [model experiment report](experiments/results/README.md)
-  includes output collapse in small-model conditions and language/persona spillover
-  in the small Gemma samples. These results do not establish preserved general
-  capabilities, rogue-agent detection, or a universally safe coefficient.
+- **Steering behavior:** the [evaluation harness run](experiments/results/README.md)
+  on Qwen2.5-0.5B-Instruct (48 held-out English and Arabic prompts, 95% intervals)
+  found a trade-off: centered steering at ratio 0.05 left ARC-Easy accuracy
+  unchanged within its interval, 0.1 raised a religious register but cost 15
+  points of accuracy, and 0.2 degenerated 81% of outputs. Human relevance ratings
+  are pending. These results do not establish preserved general capabilities,
+  rogue-agent detection, or a universally safe dose.
 - **Pending deployment:** no live agent host or real external side effects were
   evaluated in the guardian implementation. Held-out model comparisons and host
   bypass/kill-switch drills remain acceptance gates.

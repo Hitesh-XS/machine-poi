@@ -57,8 +57,9 @@ recipes on `dev` and report `test`. The Arabic translations await a
 native-speaker review.
 
 Before running, the harness rejects any prompt that repeats, or shares at least
-60% of its words with, a text used to build, center or calibrate vectors, or a
-prompt from the earlier experiments.
+60% of its words with, a control or calibration sentence or a prompt from the
+earlier experiments. Quran verses, which the vectors are built from, are not in
+this check.
 
 ## Metrics
 

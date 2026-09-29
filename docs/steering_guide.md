@@ -197,11 +197,13 @@ Ratios, not raw coefficients, transfer between models. High-level vectors are
 unit-norm, and the norms of committed mean-activation vectors range from 59–96
 (Gemma 4) to about 2,375 (SmolLM2), so a coefficient that moves one model
 noticeably is inert on another. Presets are ratios: `gentle` 0.02, `moderate` and
-`focused` and `workspace` 0.05, `strong` 0.1. The calibrated Gemma runs in the
-committed results changed behavior at a relative perturbation of about 0.08, but
-that figure divides by the mean token norm; the median-based ratio of the same
-update is higher. These presets are starting points, not validated doses. A
-negative ratio steers away from the direction, for ablations.
+`focused` and `workspace` 0.05, `strong` 0.1. In the
+[evaluation run](../experiments/results/README.md) on Qwen2.5-0.5B-Instruct,
+centered vectors at 0.05 left ARC-Easy accuracy unchanged within its interval, 0.1
+cost 15 points while adding a religious register even to neutral answers, and 0.2
+degenerated most outputs. These presets are starting points, not validated doses;
+measure a new model with the [evaluation harness](evaluation.md) before relying on
+one. A negative ratio steers away from the direction, for ablations.
 
 Dose ratios apply to add mode. For blend, replace or clamp, set
 `dose_ratio=None` and a raw `coefficient`; `set_steering_strength(c)` does this,

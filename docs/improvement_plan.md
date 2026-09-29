@@ -4,7 +4,7 @@
 [Containment plan](rogue_agent_containment_plan.md) ·
 [Workspace roadmap](global_workspace_improvement_plan.md)
 
-Status: Phases 0–3 delivered 2026-09-29; later phases proposed. Reviewed at commit
+Status: Phases 0–4 delivered 2026-09-29; Phase 5 proposed. Reviewed at commit
 `8be027d`. Paths and line numbers in the findings refer to that commit; Phase 1
 moved `src/` to `machine_poi/`.
 
@@ -194,7 +194,34 @@ Delivered as one commit per item with tests. Notes beyond the table:
 | M3 | Add language-matched controls. The negative set is Arabic non-Quranic prose (e.g. MSA news or encyclopedia text, subject to license; see decisions). Optionally add a parallel English-translation contrast. Deduplicate negatives and hash both sets into the metadata. | The eval (Phase 4) reports the language-ID shift on neutral prompts for each control. |
 | M6 (vectors) | Remove `SteeringVectorExtractor` projection paths, or move them to `experiments/` with a warning. Delete the redundant `ContrastiveSteeringExtractor` computation in the steerer. | No high-level path imports projection code. |
 
-### Phase 4: evaluation harness (implements roadmap §4 "workspace audit mode")
+### Phase 4: evaluation harness (implements roadmap §4 "workspace audit mode") (delivered)
+
+Delivered as `experiments/steering_eval.py`, `machine_poi/evaluation.py`,
+`experiments/eval_prompts.json` and [the evaluation guide](evaluation.md), with one
+committed run on Qwen2.5-0.5B-Instruct ([results](../experiments/results/README.md)).
+Notes beyond the plan:
+- **Thematic relevance:** the documented rubric, blinded rating sheet and kappa
+  scoring are in place, but no human ratings have been collected. The run reports
+  an embedding proxy instead, which rewards a religious register whether or not
+  it is relevant.
+- **Capability:** ARC-Easy only (100 items, acc_norm), fetched at run time.
+  GSM8K is near zero for a 0.5B model and was left out.
+- **Language metric:** the language-ID metric is an Arabic-script share. For M3's
+  acceptance, neither control shifted English neutral prompts into Arabic script
+  at ratio 0.1, but the English control gave a much weaker direction.
+- **Bugs the run found:**
+  - Retrieval quoting ASCII-escaped Arabic, which made the context unreadable
+    and up to 40k tokens; fixed.
+  - The degeneration flag missed character loops; fixed on the dev split.
+  - The English-only MRA template makes the model answer Arabic prompts in
+    English; this is still open.
+- **Interruptions:** the harness checkpoints conditions so interrupted runs
+  resume on the same commit. The committed run needed this twice.
+- **Demonstration runner:** `reproduce_paper.py` §5.2 is retired and the script
+  is relabelled as a demonstration runner. PAPER.md §5 now cites only the harness
+  run.
+
+The plan as written:
 
 Add `experiments/steering_eval.py`, driven by a YAML/JSON spec:
 
