@@ -27,6 +27,13 @@ from .retrieval_context import quote_retrieval
 from .knowledge_base import QuranKnowledgeBase
 from .hybrid_knowledge_base import HybridQuranKnowledgeBase, HybridQueryResult
 from .graph_bridge import GraphBridgeGenerator, BridgeResult
+from .themes import (
+    DOMAIN_BRIDGE_MAP,
+    QURANIC_THEMES,
+    embed_query,
+    matching_keywords,
+    theme_index,
+)
 
 # Import config types and defaults
 import sys
@@ -40,107 +47,6 @@ from config import (
 
 # Setup module logger
 logger = logging.getLogger("machine_poi.steerer")
-
-
-# Domain bridge mappings: maps common concepts to Quranic themes
-DOMAIN_BRIDGE_MAP: Dict[str, List[str]] = {
-    # Technical/Programming domains
-    "bug": ["correction", "improvement", "refinement", "fixing mistakes"],
-    "debug": ["patience", "careful examination", "seeking truth"],
-    "error": ["forgiveness", "learning from mistakes", "repentance"],
-    "code": ["creation", "order", "structure", "wisdom"],
-    "refactor": ["purification", "improvement", "renewal"],
-    "optimize": ["excellence", "perfection", "ihsan"],
-    "test": ["verification", "proof", "examination"],
-    "deploy": ["trust in Allah", "tawakkul", "action after preparation"],
-
-    # Teamwork/Social domains
-    "team": ["unity", "brotherhood", "cooperation", "ummah"],
-    "conflict": ["reconciliation", "peace-making", "patience"],
-    "argue": ["respectful dialogue", "wisdom in speech", "reconciliation"],
-    "collaborate": ["mutual help", "cooperation", "supporting one another"],
-    "leadership": ["responsibility", "trust", "justice", "consultation"],
-    "decision": ["consultation", "shura", "seeking guidance", "istikharah"],
-
-    # Personal/Emotional domains
-    "stress": ["patience", "sabr", "trust in Allah", "peace of heart"],
-    "anxiety": ["remembrance of Allah", "tranquility", "tawakkul"],
-    "failure": ["perseverance", "learning", "hope", "never despair"],
-    "success": ["gratitude", "shukr", "humility", "continued effort"],
-    "motivation": ["purpose", "intention", "seeking Allah's pleasure"],
-    "fear": ["courage", "trust", "hope in Allah's mercy"],
-
-    # Learning/Growth domains
-    "learn": ["seeking knowledge", "wisdom", "reflection", "tadabbur"],
-    "understand": ["contemplation", "insight", "divine guidance"],
-    "teach": ["conveying truth", "patience", "wisdom", "example"],
-    "growth": ["spiritual development", "self-improvement", "tarbiyah"],
-
-    # General life domains
-    "money": ["trust", "provision from Allah", "gratitude", "moderation"],
-    "health": ["blessing", "patience in hardship", "gratitude"],
-    "family": ["mercy", "compassion", "responsibility", "kindness to parents"],
-    "time": ["value of time", "not wasting life", "preparation for hereafter"],
-    "death": ["certainty", "preparation", "meeting Allah", "legacy"],
-    "life": ["purpose", "test", "journey to Allah", "worship"],
-}
-
-
-# Curated Quranic themes for embedding-based auto-bridge generation
-QURANIC_THEMES: List[str] = [
-    # Core spiritual concepts
-    "patience and perseverance (sabr)",
-    "gratitude and thankfulness (shukr)",
-    "trust and reliance on Allah (tawakkul)",
-    "repentance and seeking forgiveness (tawbah)",
-    "remembrance of Allah (dhikr)",
-    "spiritual purification (tazkiyah)",
-    "excellence in worship (ihsan)",
-    "consciousness of Allah (taqwa)",
-    
-    # Moral virtues
-    "honesty and truthfulness",
-    "justice and fairness",
-    "mercy and compassion",
-    "humility and modesty",
-    "generosity and charity",
-    "kindness to parents and family",
-    "fulfilling promises and trusts",
-    "forgiving others",
-    
-    # Life guidance
-    "dealing with hardship and trials",
-    "hope and never despairing",
-    "balance and moderation",
-    "seeking knowledge and wisdom",
-    "reflection and contemplation (tadabbur)",
-    "taking responsibility",
-    "preparing for the hereafter",
-    "purpose and meaning of life",
-    
-    # Social relations
-    "brotherhood and unity",
-    "consultation and cooperation (shura)",
-    "reconciliation and peace-making",
-    "respectful dialogue",
-    "supporting one another",
-    "community (ummah)",
-    
-    # Work and action
-    "striving with effort (jihad al-nafs)",
-    "excellence in work",
-    "fulfilling duties and obligations",
-    "taking action after preparation",
-    "persisting despite difficulties",
-    "learning from mistakes",
-    
-    # Inner states
-    "peace and tranquility of heart",
-    "contentment and inner satisfaction",
-    "overcoming fear and anxiety",
-    "building confidence through faith",
-    "finding strength in adversity",
-]
 
 
 class SteeringError(Exception):
@@ -345,7 +251,6 @@ class QuranSteerer:
         # Cached data
         self.quran_embeddings: Optional[Dict[str, Any]] = None
         self.steering_vectors: Optional[Dict[int, torch.Tensor]] = None
-        self._theme_embeddings: Optional[np.ndarray] = None  # For auto domain bridges
         self.config = SteeringConfig()
         self.last_run_diagnostics = {}
         
@@ -452,20 +357,8 @@ class QuranSteerer:
         Returns:
             Numpy array of shape (num_themes, embedding_dim) with normalized embeddings.
         """
-        if self._theme_embeddings is not None:
-            return self._theme_embeddings
-            
         self._ensure_embedder_loaded()
-        
-        logger.info("Building theme embedding index for auto-bridge generation...")
-        embeddings = self.embedder.create_embeddings(QURANIC_THEMES)
-        
-        # Normalize for cosine similarity
-        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-        self._theme_embeddings = embeddings / (norms + 1e-8)
-        
-        logger.info(f"Theme index built with {len(QURANIC_THEMES)} themes")
-        return self._theme_embeddings
+        return theme_index(self.embedder)
 
     def _auto_bridge_via_embeddings(
         self, 
@@ -489,12 +382,8 @@ class QuranSteerer:
         # Build theme index if not already built
         theme_embeddings = self._build_theme_index()
         
-        # Embed the query
-        query_embedding = self.embedder.create_embedding(query)
-        query_norm = np.linalg.norm(query_embedding)
-        if query_norm > 0:
-            query_embedding = query_embedding / query_norm
-        
+        query_embedding = embed_query(self.embedder, query)
+
         # Compute cosine similarities
         similarities = np.dot(theme_embeddings, query_embedding)
         
@@ -541,13 +430,11 @@ class QuranSteerer:
         if max_bridges is None:
             max_bridges = STEERING_DEFAULTS.max_domain_bridges
             
-        query_lower = query.lower()
         bridges: List[str] = []
 
         # Tier 1: Try static DOMAIN_BRIDGE_MAP first (fast lookup)
-        for keyword, themes in DOMAIN_BRIDGE_MAP.items():
-            if keyword in query_lower:
-                bridges.extend(themes[:2])
+        for keyword in matching_keywords(query, DOMAIN_BRIDGE_MAP):
+            bridges.extend(DOMAIN_BRIDGE_MAP[keyword][:2])
 
         # Remove duplicates while preserving order
         seen: set = set()

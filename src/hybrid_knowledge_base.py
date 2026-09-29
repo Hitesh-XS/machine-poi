@@ -10,6 +10,8 @@ from typing import Dict, List, Optional, Any, Union, TYPE_CHECKING
 from pathlib import Path
 from dataclasses import dataclass
 
+from .themes import matching_keywords
+
 if TYPE_CHECKING:
     from .knowledge_base import QuranKnowledgeBase
     from .lightrag_adapter import QuranLightRAG
@@ -193,7 +195,7 @@ class HybridQuranKnowledgeBase:
         if mode == "auto":
             # Simple heuristic: use graph if query seems conceptual
             conceptual_indicators = ["why", "how", "meaning", "purpose", "teach", "learn"]
-            if any(ind in query.lower() for ind in conceptual_indicators):
+            if matching_keywords(query, conceptual_indicators):
                 mode = "hybrid"
             else:
                 mode = "vector"
