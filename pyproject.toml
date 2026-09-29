@@ -31,7 +31,7 @@ graph = [
 # Hosted LLM providers for graph entity extraction.
 providers = [
     "openai>=1.0.0",
-    "google-generativeai>=0.8.0",
+    "google-genai>=1.0.0",
     "httpx>=0.25.0",
 ]
 quantization = ["bitsandbytes>=0.43.0"]

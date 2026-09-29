@@ -205,6 +205,46 @@ class TestLLMAdapters:
         adapter = create_local_llm_adapter(mock_llm)
         assert callable(adapter)
 
+    def test_gemini_adapter_uses_google_genai_async_client(self, monkeypatch):
+        """The adapter targets google-genai, not the deprecated google-generativeai."""
+        import importlib.util
+        import sys
+        import types
+        from types import SimpleNamespace
+
+        from machine_poi.llm_adapters import create_gemini_adapter
+
+        fake_types = types.ModuleType("google.genai.types")
+        fake_types.Content = lambda role, parts: SimpleNamespace(role=role, parts=parts)
+        fake_types.Part = SimpleNamespace(from_text=lambda *, text: SimpleNamespace(text=text))
+        fake_types.GenerateContentConfig = lambda **kwargs: SimpleNamespace(**kwargs)
+        fake_genai = types.ModuleType("google.genai")
+        fake_genai.types = fake_types
+        fake_genai.Client = MagicMock()
+        generate = AsyncMock(return_value=SimpleNamespace(text="entities"))
+        fake_genai.Client.return_value.aio.models.generate_content = generate
+        if importlib.util.find_spec("google") is None:
+            monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
+        monkeypatch.setitem(sys.modules, "google.genai", fake_genai)
+        monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
+
+        adapter = create_gemini_adapter("gemini-test", api_key="key")
+        history = [{"role": "assistant", "content": "earlier"}]
+        result = asyncio.run(
+            adapter("Extract", system_prompt="rules", history_messages=history, max_tokens=64)
+        )
+
+        assert result == "entities"
+        fake_genai.Client.assert_called_once_with(api_key="key")
+        kwargs = generate.call_args.kwargs
+        assert kwargs["model"] == "gemini-test"
+        assert [(c.role, c.parts[0].text) for c in kwargs["contents"]] == [
+            ("model", "earlier"),
+            ("user", "Extract"),
+        ]
+        assert kwargs["config"].system_instruction == "rules"
+        assert kwargs["config"].max_output_tokens == 64
+
     def test_local_llm_adapter_extracts_without_steering(self):
         """Graph extraction must not run through active steering hooks."""
         import torch

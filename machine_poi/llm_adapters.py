@@ -142,10 +142,14 @@ def create_gemini_adapter(
         Async function compatible with LightRAG
     """
     import os
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
 
     api_key = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-    genai.configure(api_key=api_key)
+    client = genai.Client(api_key=api_key)
+
+    def content(role: str, text: str):
+        return types.Content(role=role, parts=[types.Part.from_text(text=text)])
 
     async def gemini_complete(
         prompt: str,
@@ -154,37 +158,21 @@ def create_gemini_adapter(
         **kwargs,
     ) -> str:
         """Async Gemini completion for LightRAG."""
-        import asyncio
+        contents = [
+            content("user" if msg.get("role") == "user" else "model", msg.get("content", ""))
+            for msg in history_messages or []
+        ]
+        contents.append(content("user", prompt))
 
-        # Build conversation history
-        contents = []
-
-        if history_messages:
-            for msg in history_messages:
-                role = "user" if msg.get("role") == "user" else "model"
-                contents.append({"role": role, "parts": [msg.get("content", "")]})
-
-        contents.append({"role": "user", "parts": [prompt]})
-
-        # Configure model with system instruction
-        generation_config = {
-            "temperature": kwargs.get("temperature", 0.7),
-            "max_output_tokens": kwargs.get("max_tokens", 2048),
-        }
-
-        model = genai.GenerativeModel(
-            model_name=model_name,
-            system_instruction=system_prompt,
-            generation_config=generation_config,
+        response = await client.aio.models.generate_content(
+            model=model_name,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                temperature=kwargs.get("temperature", 0.7),
+                max_output_tokens=kwargs.get("max_tokens", 2048),
+            ),
         )
-
-        # Run in executor since genai is sync
-        loop = asyncio.get_running_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: model.generate_content(contents)
-        )
-
         return response.text
 
     return gemini_complete

@@ -586,3 +586,36 @@ class TestKvSharedLayerDiagnostics:
 
         diag = llm.get_attention_transport_diagnostics("x", max_loop_positions=4)
         assert diag == {}
+
+
+class TestQuantizedLoading:
+    """4-bit/8-bit loading goes through BitsAndBytesConfig, not deprecated kwargs."""
+
+    def _load(self, **flags):
+        from unittest.mock import MagicMock
+
+        from machine_poi import llm_wrapper
+
+        with patch.object(llm_wrapper, "bitsandbytes_available", return_value=True), \
+             patch.object(llm_wrapper, "BitsAndBytesConfig") as config, \
+             patch.object(llm_wrapper.AutoModelForCausalLM, "from_pretrained", return_value=MagicMock()) as model, \
+             patch.object(llm_wrapper.AutoTokenizer, "from_pretrained", return_value=MagicMock()):
+            llm_wrapper.SteeredLLM("org/model", device="cpu", **flags).load_model()
+        return config, model.call_args.kwargs
+
+    @pytest.mark.parametrize("flag", ["load_in_4bit", "load_in_8bit"])
+    def test_quantization_config_replaces_deprecated_kwargs(self, flag):
+        config, kwargs = self._load(**{flag: True})
+        config.assert_called_once_with(**{flag: True})
+        assert kwargs["quantization_config"] is config.return_value
+        assert kwargs["device_map"] == "auto"
+        assert "load_in_4bit" not in kwargs and "load_in_8bit" not in kwargs
+
+    def test_missing_bitsandbytes_names_the_extra(self):
+        from machine_poi import llm_wrapper
+
+        with patch.object(llm_wrapper, "bitsandbytes_available", return_value=False), \
+             patch.object(llm_wrapper.AutoModelForCausalLM, "from_pretrained") as model:
+            with pytest.raises(ImportError, match=r"machine-poi\[quantization\]"):
+                llm_wrapper.SteeredLLM("org/model", device="cpu", load_in_4bit=True).load_model()
+        model.assert_not_called()

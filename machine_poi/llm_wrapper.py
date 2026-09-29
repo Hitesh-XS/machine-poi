@@ -5,6 +5,7 @@ Provides hooks into transformer layers to enable activation steering
 during inference without modifying model weights.
 """
 
+import importlib.util
 import logging
 import math
 import re
@@ -16,6 +17,7 @@ from typing import Optional, Dict, List, Union, Tuple, Any
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
+    BitsAndBytesConfig,
     PreTrainedModel,
     PreTrainedTokenizer,
 )
@@ -132,6 +134,10 @@ def kv_share_source_map(
         if layer_types[layer_idx] in last_seen
     }
 
+
+
+def bitsandbytes_available() -> bool:
+    return importlib.util.find_spec("bitsandbytes") is not None
 
 
 def synchronized(method):
@@ -352,11 +358,17 @@ class SteeredLLM:
             "dtype": self.torch_dtype,  # Was torch_dtype, deprecated
         }
 
-        if self.load_in_8bit:
-            load_kwargs["load_in_8bit"] = True
-            load_kwargs["device_map"] = "auto"
-        elif self.load_in_4bit:
-            load_kwargs["load_in_4bit"] = True
+        if self.load_in_8bit or self.load_in_4bit:
+            # Passing load_in_*bit directly to from_pretrained is deprecated.
+            if not bitsandbytes_available():
+                raise ImportError(
+                    "4-bit and 8-bit loading need bitsandbytes: "
+                    "pip install 'machine-poi[quantization]'"
+                )
+            if self.load_in_8bit:
+                load_kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
+            else:
+                load_kwargs["quantization_config"] = BitsAndBytesConfig(load_in_4bit=True)
             load_kwargs["device_map"] = "auto"
         else:
             load_kwargs["device_map"] = self.device
