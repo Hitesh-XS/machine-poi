@@ -1,5 +1,8 @@
 # Integrating the guardian reference runtime
 
+[README](../README.md) · [Architecture](architecture.md) ·
+[Testing](testing.md) · [Steering guide](steering_guide.md)
+
 ## What runs now
 
 Machine-POI now includes a standard-library-only action gateway in `src/guardian/`.
@@ -35,6 +38,82 @@ been produced**. The text in a fixture does not get passed through an LLM. The
 report must not be interpreted as a prompt-injection success rate or evidence
 that steering detects rogue agents. Live model and steering A/B tests require
 real host traces and separate held-out tasks.
+
+## Minimal host API example
+
+This standalone example uses a list as its mock tool. The literal identities stand
+in for authenticated host context; they must never be copied from an agent request.
+
+```python
+import asyncio
+import time
+
+from src.guardian import ActionScope, Gateway, ProposedAction, TaskGrant, ToolSpec
+
+effects = []
+
+def describe_write(arguments):
+    return ActionScope(resources=frozenset({arguments["document"]}))
+
+async def write(arguments, context):
+    context.checkpoint()
+    effects.append(dict(arguments))
+    return {"receipt": len(effects)}
+
+async def main():
+    gateway = Gateway(
+        [ToolSpec("write_note", "1", {"document": str, "text": str},
+                  describe_write, write)],
+        operators={"operator"},
+    )
+    gateway.issue("operator", TaskGrant(
+        run_id="example", principal="agent", expires_at=time.time() + 60,
+        tools=frozenset({"write_note"}), resources=frozenset({"draft:1"}),
+        max_actions=1, max_attempts=3,
+    ))
+    allowed = ProposedAction.create(
+        "example", "write-1", "write_note",
+        {"document": "draft:1", "text": "Authorized draft"},
+    )
+    forbidden = ProposedAction.create(
+        "example", "write-2", "write_note",
+        {"document": "protected:1", "text": "Out of scope"},
+    )
+    print((await gateway.submit("agent", allowed)).status)
+    print((await gateway.submit("agent", forbidden)).status)
+    assert len(effects) == 1
+
+asyncio.run(main())
+```
+
+Expected output is `executed`, then `blocked`. The second proposal fails the
+resource check and stops the run. Cost/token scopes default to zero in this mock;
+adapters that invoke paid or token-consuming services must declare enforceable
+upper bounds and receive matching grant budgets.
+
+| API | Caller and effect |
+| --- | --- |
+| `issue(operator, grant)` | Host operator creates a bounded run; does not execute a tool |
+| `await submit(caller, action)` | Agent channel proposes one action; host supplies caller identity |
+| `pending(operator, run_id)` | Host reads the immutable pending action, resolved scope, hash and expiry |
+| `await approve(operator, run_id, action_hash)` | Host approves and executes the stored action once after revalidation |
+| `stop(operator, run_id)` | Host stops the run and descendants; rejection also uses this path |
+| `observe(operator, run_id, signal)` | Host records a known risk signal without adding authority |
+| `preview(caller, action)` | Host shadow inspection; records an audit decision without dispatch or budget reservation |
+| `state(run_id)` | Host reads current run state |
+
+`ActionOutcome` carries `decision`, `status` and optional `result`. Inspect the
+status before consuming a result: `pending` needs review; `blocked` did not
+execute; `interrupted` or `uncertain` requires reconciliation. Do not automatically
+retry uncertain effects. Default review lifetime is 300 seconds, capped by grant
+expiry. The host must display the exact pending action and obtain an independent
+decision before calling `approve`; the demo's simulated approval is not a UI.
+
+The schema rejects unknown top-level arguments and exact-type mismatches. Tool
+adapters must validate nested objects and business rules. Scopes use exact string
+identifiers; empty sets are not wildcards. `TaskGrant.goal` documents intent but
+is not semantically evaluated by policy. The gateway is an importable component,
+not an authenticated HTTP service or an automatic wrapper around `main.py`.
 
 ## Host integration contract
 
@@ -77,8 +156,8 @@ real host traces and separate held-out tasks.
    system. Logical stopping happens first and remains effective if that callback
    fails. A callback failure marks the gateway unavailable, stops all local runs,
    and cancels their tasks; an explicit `stop` reports the failure to the host.
-   The incident owner must reconcile credential revocation. Integrate an independent kill switch
-   for process, network and remote job control.
+   The incident owner must reconcile credential revocation. Integrate an
+   independent kill switch for process, network and remote job control.
 8. Persist the audit sink to host-only storage. Events exclude arguments, tool
    results, model text and raw exceptions. The hash chain detects ordinary edits
    against a known chain, not malicious rewriting/truncation by the storage
@@ -108,6 +187,10 @@ replay store before scaling out. The same audit path must have one writer.
 
 ## Steering changes and migration
 
+The [steering guide](steering_guide.md) contains complete Python/CLI examples,
+injection semantics and known CLI routing limits. The relevant migration points
+for an embedding host are:
+
 - One model serializes inference and hook mutation through an RLock. High-level
   temporary MRA/graph steering uses a synchronous session that restores the exact
   prior hooks and enabled flags, even after errors. Async retrieval completes
@@ -119,15 +202,17 @@ replay store before scaling out. The same audit path must have one writer.
   **target projection on the unit vector**; zero removes the existing projection
   and is not the same as disabling steering. Diagnostics compute the actual
   change for add, blend, clamp and replace. Replace remains a research mode.
-- `QuranSteerer.last_run_diagnostics` retains scalar summaries of the last
-  completed run; temporary captured activations are cleared during restoration.
+- `QuranSteerer.last_run_diagnostics` retains scalar summaries after `generate`
+  and `generate_with_graph`; temporary captured activations are cleared during
+  restoration. Low-level comparison does not update that field.
 - Retrieval is quoted, bounded reference data. Dynamic steering from retrieval
   now defaults off. A trusted-corpus experiment must explicitly pass both
   `use_dynamic_steering=True` and `trusted_retrieval=True`. Quoting is not an
   injection detector; the tool gateway still enforces authority.
-- Model and embedding remote code defaults off. The Python APIs accept a
-  `revision`; remote code opt-in requires a full commit hash. The CLI exposes
-  `--revision` and `--trust-remote-code`. Review the model code and snapshot
+- Model and embedding remote code defaults off. `QuranSteerer` accepts
+  `llm_revision`; `SteeredLLM` and `QuranEmbeddings` accept `revision`. Remote code
+  opt-in requires a full commit hash. The CLI exposes `--revision` and
+  `--trust-remote-code` for the LLM. Review the model code and snapshot
   before opt-in; a revision alone is not a safety review.
 - Steering caches now contain numeric arrays plus JSON metadata for model,
   revision, corpus hash and recipe. Old/mismatched caches are rejected and

@@ -1,12 +1,22 @@
 # Curvature & Manifold Literature Review — Relevance to Machine-POI's Roadmap
 
+**Scope update (2026-09-29):** these are research leads, not validation of agent
+containment. The [architecture](architecture.md) keeps authorization in a
+deterministic host gateway. A geometric signal may inform an experiment or host
+investigation, but cannot authorize a tool action. Proposed cross-paper metric
+equivalences and thresholds below remain hypotheses requiring derivation and
+source verification before publication. The containment implementation did not
+re-run these literature studies. Read the [committed model results](../experiments/results/README.md)
+for the observed collapse and language/persona spillover, and the
+[testing guide](testing.md) for what the new runtime tests establish.
+
 **Purpose:** This document maps recent (2025–2026) literature on curvature, manifolds, and geometric attention onto Machine-POI's existing roadmap — specifically the [Global Workspace Improvement Plan](global_workspace_improvement_plan.md) and the attention-transport diagnostics already implemented in `src/workspace_diagnostics.py` and `experiments/gpt_on_manifolds_v4.py`.
 
 ---
 
 ## 1. Where the project already stands
 
-Machine-POI's roadmap has two geometry-adjacent workstreams already **implemented**:
+Machine-POI's roadmap has three geometry-adjacent workstreams already **implemented**:
 
 | Roadmap item | Status | File |
 |---|---|---|
@@ -32,7 +42,7 @@ Planned-but-not-implemented roadmap items that geometric literature can inform:
 |---|---|---|
 | [The Curved Spacetime of Transformer Architectures](https://arxiv.org/abs/2511.03060) (Nov 2025) | Attention is a discrete connection transporting value vectors on a curved semantic manifold; proposes turning-angle and length-to-chord-ratio curvature diagnostics, plus a "deflection" test analogous to gravitational lensing. | Provides an **independent, published formalization** of the same idea Machine-POI already implements (attention-as-transport). Its turning-angle / length-to-chord diagnostics are simpler than the bivector/holonomy machinery in `gpt_on_manifolds_v4.py` and could serve as a **lightweight cross-check** in the planned audit CLI mode — cheap enough to run per-prompt without the O(n³) triangular-loop cost of holonomy. The "deflection under controlled context edits" experiment is a direct template for testing whether Quran steering *bends* representation trajectories in a meaning-consistent way, which is exactly what `steered_vs_baseline_transport.py` tries to detect via ρ and holonomy deltas.|
 | [RiemannFormer: A Framework for Attention in Curved Spaces](https://arxiv.org/abs/2506.07405) (Jun 2025) | Reformulates Q·K attention as parallel transport between tangent spaces under a learned Riemannian metric M_i at each token position; requires transporting keys into the query's tangent frame before the inner product. | Gives a **principled alternative attention formula** (not just a diagnostic) that Machine-POI could adopt if it ever wants to bake curvature *into* the steered model's forward pass rather than only measuring it post hoc. Also useful as a sanity check: RiemannFormer's parallel-transport operator is structurally the same object as the `transport_map()` (T_t = exp(−ηω_t)) already in `gpt_on_manifolds_v4.py`. |
-| [Gating Enables Curvature: A Geometric Expressivity Gap in Attention](https://arxiv.org/pdf/2604.14702.pdf) (Apr 2026) | Proves ungated attention is restricted to intrinsically **flat** statistical manifolds (its outputs are affine combinations of values); multiplicative gating is required to reach non-flat/positively-curved geometries. | Directly relevant to interpreting the project's own "flat / commutative-varying / order-sensitive" per-head taxonomy (§6.4 of `gpt_on_manifolds_v4.py`). If a head is architecturally ungated, this paper predicts it *must* register as "FLAT" or low-ρ under the diagnostics — a testable hypothesis the roadmap's audit mode could report on (e.g., flag heads/architectures where flatness is structural rather than learned). |
+| [Gating Enables Curvature: A Geometric Expressivity Gap in Attention](https://arxiv.org/pdf/2604.14702.pdf) (Apr 2026) | Candidate literature on the relationship between gating and statistical-manifold curvature; verify its assumptions and curvature definition before applying it here. | Suggested experiment: compare gated/ungated variants while measuring output quality and this repository's ρ/holonomy. No implication from a different curvature definition to these diagnostics has been established here; ungated architecture alone does not justify labeling a measured head "FLAT". |
 | [The Bayesian Geometry of Transformer Attention](https://arxiv.org/abs/2512.22471) (Dec 2025) | Shows attention implements content-addressable routing of a Bayesian belief state carried in the residual stream. | Less a curvature paper than a routing-semantics paper, but complements the roadmap's framing that steering should be evaluated on whether it changes *how context is routed*, not just *where representations sit*. Could motivate a belief-tracking diagnostic alongside ρ/holonomy in the planned audit mode. |
 
 ### 2.2 Hyperbolic / mixed-curvature LLM architectures (relevant to the manifold *training* experiment, not the steering pipeline itself)
@@ -63,8 +73,8 @@ Based on the above mapping, three concrete additions to `docs/global_workspace_i
 1. **Item 2b (attention-transport diagnostics) — add a lightweight cross-check.**
    Implement the turning-angle / length-to-chord curvature diagnostic from *[The Curved Spacetime of Transformer Architectures](https://arxiv.org/abs/2511.03060)* as a cheaper companion to the existing bivector/holonomy diagnostics, since it avoids the O(n³) triangular-loop cost and can run per-token during interactive sessions.
 
-2. **Item 7 (oversteering safeguards) — define a curvature-spike threshold.**
-   Following *[Latent Semantic Manifolds in LLMs](https://arxiv.org/pdf/2603.22301.pdf)*, treat a sudden rise in local (PCA or sectional) curvature at a steered layer, relative to its unsteered baseline, as an early-warning signal for representation instability — complementing the existing relative-perturbation metric.
+2. **Item 7 (oversteering safeguards) — evaluate a curvature-spike hypothesis.**
+   The proposed connection to *[Latent Semantic Manifolds in LLMs](https://arxiv.org/pdf/2603.22301.pdf)* needs a precise metric mapping and held-out calibration. Test whether changes relative to a model's baseline predict an independently measured output regression; do not install a threshold based on the analogy alone. Current finite-value/configuration checks are implemented, but a validated geometric detector is not.
 
 3. **New experimental item — Fréchet-mean steering vectors.**
    Following *[Riemannian Geometry for Pre-trained LM Embeddings](https://arxiv.org/html/2607.07047v1)*, add an experiment comparing the current arithmetic-mean Quran Persona vector against a Fréchet mean computed on the pulled-back Jacobian metric, to test whether it yields more stable or more thematically consistent steering at a given coefficient.
@@ -96,4 +106,10 @@ Lower-priority / background-only: the hyperbolic-LLM architecture papers (HELM, 
 - Hestenes, D. & Sobczyk, G. (1984). *Clifford Algebra to Geometric Calculus.*
 - Vaswani, A. et al. (2017). *Attention Is All You Need.* [arXiv:1706.03762](https://arxiv.org/abs/1706.03762)
 
-**Note:** The repo's internal references ("Is Attention Commutative? Quantifying Contextuality via a Discrete Cartan Curvature Diagnostic," Feb 2026) could not be located as a distinct indexed publication during this review. Its equations align closely with classical Cartan-geometry/Ehresmann-connection formalism and with the independently published papers listed in §2.1 above, which can serve as citable substitutes or cross-checks if the internal reference needs external validation.
+**Note:** The original review could not locate the repo's internal reference
+("Is Attention Commutative? Quantifying Contextuality via a Discrete Cartan
+Curvature Diagnostic," Feb 2026) as a distinct indexed publication. Related
+geometric frameworks use their own objects and definitions; they do not
+automatically validate this repository's equations or replace a missing source.
+Verify each reference and any metric correspondence before relying on it in a
+publication.

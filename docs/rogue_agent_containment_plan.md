@@ -2,6 +2,11 @@
 
 Status: reference runtime implemented, with live-host validation and rollout pending (2026-09-29). The findings below describe the reviewed baseline at commit 7cfa46657acacb8cbb5cb70e673e0cb3c30b1f9b; their line numbers refer to that commit. See [integration and migration instructions](guardian_integration.md) for the implemented API and deployment requirements.
 
+Navigation: [architecture](architecture.md), [steering usage](steering_guide.md),
+[validation evidence](testing.md). The contracts and state transitions below
+describe the design target; current API fields and automatic behavior are defined
+by `src/guardian/` and the integration guide.
+
 ## Execution status
 
 | Slice | Delivered | Remaining acceptance work |
@@ -59,11 +64,25 @@ Use a small framework-independent, versioned contract:
 - **Decision:** ALLOW, DENY, REVIEW, or STOP; reason code, policy version, evaluated action hash, expiry. Review approval binds to this exact hash, grant, approver, and expiry.
 - **ActionOutcome:** execution result, side effects, resource references where available, latency, and redacted audit fields.
 
+The implemented `ProposedAction` contains run/action IDs, tool, canonical JSON
+arguments and an idempotency key. Resource/destination/data classification is
+derived by the trusted adapter, not accepted as agent-provided authority.
+`Decision` records verdict/reason/hash/version; expiry is held in the grant or
+pending review. `ActionOutcome` contains decision/status/result; adapters must
+provide any service receipts. The larger contract above is not a claim that every
+field or distributed service is already implemented.
+
 Policy order: validate schema and grant; authenticate caller; check tool, resource, recipient and destination; assess data and side effects; reserve budgets atomically; check revocation; decide; execute with least privilege; record outcome. Missing context, unavailable policy, invalid approval, expired grant, or a changed action fails closed for side effects. A read-only fallback, if any, must be explicitly scoped by the host.
 
 ### Containment behavior
 
 States: RUNNING -> OBSERVE for weak signals; OBSERVE -> PAUSED for persistent or ambiguous drift; RUNNING, OBSERVE or PAUSED -> STOPPED for hard violations or a kill switch. PAUSED holds the proposed action for a human decision. STOPPED revokes ephemeral credentials, cancels queued actions and child runs, blocks new tool calls, quarantines memory writes, preserves an incident record, and alerts the operator. Resume only from a newly authenticated grant and fresh state. External actions already completed need reconciliation or compensation; rollback cannot be promised.
+
+In the reference runtime, `observe` only records host-supplied signals; no drift
+classifier or automatic persistence threshold is installed. In-scope review
+actions pause the run. Credential revocation and alerts use the host callback;
+memory writes are covered only when their adapters are mediated. OS enforcement
+and remote recovery require host integration.
 
 - **Hard block:** out-of-scope tool/resource/destination, data classification conflict, broadened delegation, unapproved shell or code execution, policy/log modification, replayed action, exhausted budget, or action after revocation.
 - **Review:** irreversible or high-impact action, bulk deletion, privileged change, unusual cross-system transfer, ambiguous identity, or new external recipient. Show the reviewer exact arguments and affected data.
