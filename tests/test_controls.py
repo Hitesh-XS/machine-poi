@@ -73,6 +73,7 @@ def contrastive_steerer(sample_quran_path):
         return {layer: torch.randn(len(texts), 8) for layer in range(2)}
 
     steerer.llm.pooled_layer_means.side_effect = pooled
+    steerer.llm.layer_token_norms.return_value = {0: 10.0, 1: 10.0}
     steerer.device = "cpu"
     return steerer
 

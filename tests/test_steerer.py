@@ -264,6 +264,9 @@ class TestComputeDynamicSteering:
                 for i in range(sample_num_layers)
             }
         steerer.llm.pooled_layer_means = mock_pooled
+        steerer.llm.layer_token_norms.return_value = {
+            i: 10.0 for i in range(sample_num_layers)
+        }
         
         steerer.device = "cpu"
         
@@ -373,6 +376,9 @@ class TestPrepareQuranSteering:
                 for i in range(sample_num_layers)
             }
         steerer.llm.pooled_layer_means = mock_pooled
+        steerer.llm.layer_token_norms.return_value = {
+            i: 10.0 for i in range(sample_num_layers)
+        }
         
         steerer.device = "cpu"
         
@@ -432,6 +438,9 @@ class TestPrepareThematicSteering:
                 for i in range(sample_num_layers)
             }
         steerer.llm.pooled_layer_means = mock_pooled
+        steerer.llm.layer_token_norms.return_value = {
+            i: 10.0 for i in range(sample_num_layers)
+        }
         
         # Mock Quran embeddings for search
         steerer.quran_embeddings = {
@@ -484,6 +493,9 @@ class TestPrepareQuranPersona:
                 for i in range(sample_num_layers)
             }
         steerer.llm.pooled_layer_means = mock_pooled
+        steerer.llm.layer_token_norms.return_value = {
+            i: 10.0 for i in range(sample_num_layers)
+        }
         
         steerer.device = "cpu"
         

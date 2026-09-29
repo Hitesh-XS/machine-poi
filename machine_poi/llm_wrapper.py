@@ -883,16 +883,57 @@ class SteeredLLM:
         Returns:
             Dict mapping layer index to a float32 CPU tensor [len(texts), hidden]
         """
+        def mean(hidden, mask):
+            weights = mask.to(hidden.dtype).unsqueeze(-1)
+            return (hidden * weights).sum(dim=1) / weights.sum(dim=1).clamp_min(1)
+
+        pooled, order = self._reduce_layer_states(
+            texts, layers, batch_size, exclude_special, mean
+        )
+        restore = torch.argsort(torch.tensor(order))
+        return {layer: torch.cat(chunks)[restore] for layer, chunks in pooled.items()}
+
+    @synchronized
+    def layer_token_norms(
+        self,
+        texts: List[str],
+        layers: Optional[List[int]] = None,
+        batch_size: int = 8,
+        exclude_special: bool = True,
+    ) -> Dict[int, float]:
+        """
+        Median unsteered per-token hidden-state norm at each layer.
+
+        The median over every content token of every text is the scale that
+        dose ratios refer to. Unlike the mean, one attention-sink token with a
+        massive norm barely moves it.
+        """
+        def norms(hidden, mask):
+            return hidden.norm(dim=-1)[mask.bool()]
+
+        collected, _ = self._reduce_layer_states(
+            texts, layers, batch_size, exclude_special, norms
+        )
+        return {layer: float(torch.cat(chunks).median()) for layer, chunks in collected.items()}
+
+    def _reduce_layer_states(self, texts, layers, batch_size, exclude_special, reduce):
+        """Run texts through the unsteered model and reduce each layer's output.
+
+        ``reduce(hidden, mask)`` receives one batch's layer output and its
+        content-token mask (padding, and special tokens when excluded, are 0)
+        and returns a float tensor. Returns per-layer lists of the reduced
+        batches and the text order they ran in.
+        """
         texts = list(texts)
         if not texts:
-            raise ValueError("pooled_layer_means needs at least one text")
+            raise ValueError("Layer statistics need at least one text")
         if type(batch_size) is not int or batch_size < 1:
             raise ValueError("batch_size must be a positive integer")
         if self.model is None:
             self.load_model()
         layers = list(range(self.num_layers)) if layers is None else list(layers)
 
-        pooled: Dict[int, List[torch.Tensor]] = {layer: [] for layer in layers}
+        reduced: Dict[int, List[torch.Tensor]] = {layer: [] for layer in layers}
         current = {}
         lengths = [len(ids) for ids in self.tokenizer(texts)["input_ids"]]
         order = sorted(range(len(texts)), key=lambda index: lengths[index])
@@ -900,11 +941,8 @@ class SteeredLLM:
         def make_hook(layer_idx):
             def hook(module, inputs, output):
                 hidden = output[0] if isinstance(output, tuple) else output
-                weights = current["mask"].to(hidden.device, hidden.dtype).unsqueeze(-1)
-                sums = (hidden * weights).sum(dim=1)
-                pooled[layer_idx].append(
-                    (sums / weights.sum(dim=1).clamp_min(1)).float().cpu()
-                )
+                mask = current["mask"].to(hidden.device)
+                reduced[layer_idx].append(reduce(hidden, mask).float().cpu())
             return hook
 
         handles = []
@@ -937,8 +975,7 @@ class SteeredLLM:
                 handle.remove()
             if padding_side is not None:
                 self.tokenizer.padding_side = padding_side
-        restore = torch.argsort(torch.tensor(order))
-        return {layer: torch.cat(chunks)[restore] for layer, chunks in pooled.items()}
+        return reduced, order
 
     @synchronized
     def extract_layer_activations(

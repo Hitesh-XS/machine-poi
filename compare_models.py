@@ -71,11 +71,18 @@ Examples:
         action="store_true", 
         help="Enable Multi-Resolution Analysis (MRA) mode"
     )
-    parser.add_argument(
-        "--coefficient", 
-        type=float, 
-        default=0.5, 
-        help="Steering coefficient"
+    dose = parser.add_mutually_exclusive_group()
+    dose.add_argument(
+        "--dose-ratio",
+        type=float,
+        default=0.05,
+        help="Target relative perturbation per steered layer (comparable across models)"
+    )
+    dose.add_argument(
+        "--coefficient",
+        type=float,
+        default=None,
+        help="Raw steering coefficient instead of a dose ratio"
     )
     parser.add_argument(
         "--list-models",
@@ -283,7 +290,10 @@ def main():
     print(f"Prompt: {args.prompt}")
     print(f"Reasoning Mode: {args.reasoning} (uses native config if available)")
     print(f"MRA Mode: {args.mra}")
-    print(f"Coefficient: {args.coefficient}")
+    if args.coefficient is None:
+        print(f"Dose ratio: {args.dose_ratio}")
+    else:
+        print(f"Coefficient: {args.coefficient}")
     print(f"{'='*60}")
     
     for model_name in args.models:
@@ -311,7 +321,12 @@ def main():
             steerer.load_models()
             
             # Configure steering
-            steerer.config.coefficient = args.coefficient
+            if args.coefficient is None:
+                steerer.config.dose_ratio = args.dose_ratio
+            else:
+                steerer.config.dose_ratio = None
+                steerer.config.coefficient = args.coefficient
+            steerer.config.validate()
             
             # Prepare steering vectors
             steerer.prepare_quran_steering()

@@ -74,11 +74,13 @@ checkpoint, dtype and context length.
 A basic steering comparison is available through the CLI:
 
 ```bash
-python main.py --llm qwen2.5-0.5b --coefficient 0.2 \
+python main.py --llm qwen2.5-0.5b --dose-ratio 0.05 \
     --prompt "How should we resolve a disagreement?"
 ```
 
-This coefficient is an experimental setting, not a validated safe dose. For
+The dose ratio sets each steered layer's update to a fraction of that layer's
+typical token norm, so the same ratio means a similar relative push on any model.
+It is an experimental setting, not a validated safe dose. For
 model-specific chat formatting, MRA/graph retrieval, dynamic steering opt-in,
 cache migration, and the complete CLI reference, use the
 [steering guide](docs/steering_guide.md). Comparison modes give the steered and

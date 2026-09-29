@@ -106,6 +106,13 @@ it scales the vector before registration. Clamp controls a projection rather
 than an additive dose. Zero clamp removes that projection and is not a baseline.
 No mode has been shown here to preserve fluency at arbitrary strength.
 
+In add mode the high-level dose is a target relative perturbation `r`: layer
+`l` uses `a_l = r * scale_l * n_l / norm(v_l)`, where `n_l` is the median
+per-token hidden-state norm on neutral calibration sentences. A raw coefficient
+does not transfer between models, whose activation scales differ by more than an
+order of magnitude; a ratio does. The median avoids the first-position
+attention-sink token, whose norm dominates a mean.
+
 ### 3.3 Retrieval and domain bridges
 
 MRA adds verse, passage and surah context to the prompt. Domain bridging first
@@ -126,7 +133,8 @@ the synchronous session.
 
 Pointwise diagnostics report activation/vector norms, cosine alignment,
 projection magnitude and relative perturbation computed from the actual update
-for each injection mode, averaged over every steered token of a generation.
+for each injection mode, averaged over every steered token of a generation. The
+achieved dose ratio divides the mean update norm by the median token norm.
 High-level generation retains these scalar summaries in `last_run_diagnostics`. Attention-transport experiments summarize a constructed
 connection using variation/commutator terms and holonomy. Those quantities are
 research diagnostics, with no validated threshold for authorization or safety.

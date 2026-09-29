@@ -17,7 +17,12 @@ from pathlib import Path
 from typing import Optional, Dict, List, Union, Tuple, Literal, Any
 from dataclasses import asdict, dataclass
 
-from .controls import neutral_texts as neutral_control_texts, texts_sha256, unique_texts
+from .controls import (
+    calibration_texts,
+    neutral_texts as neutral_control_texts,
+    texts_sha256,
+    unique_texts,
+)
 from .quran_embeddings import QuranEmbeddings, QuranFileError, resolve_corpus_path
 from .llm_wrapper import SteeredLLM
 from .steering_cache import load_vectors, save_vectors
@@ -67,7 +72,15 @@ class InvalidConfigError(SteeringError):
 class SteeringConfig:
     """Configuration for steering behavior."""
 
-    # Steering strength (higher = stronger effect)
+    # Dose as a target relative perturbation: at each steered layer the update
+    # norm is this fraction of the layer's median token norm, measured on a
+    # calibration set (QuranSteerer.calibrate_dose), times the layer
+    # distribution scale. Negative values steer away. Add mode only. Set it to
+    # None to use the raw coefficient below instead.
+    dose_ratio: Optional[float] = 0.05
+
+    # Raw coefficient, used only when dose_ratio is None. Its effect depends on
+    # the model's activation scale, so it does not transfer between models.
     coefficient: float = 0.5
 
     # Which layers to steer (None = auto-select middle layers)
@@ -84,6 +97,17 @@ class SteeringConfig:
 
     def validate(self) -> None:
         """Validate configuration values."""
+        if self.dose_ratio is not None:
+            if not math.isfinite(self.dose_ratio) or abs(self.dose_ratio) > 1:
+                raise InvalidConfigError(
+                    f"Dose ratio must be finite and in [-1, 1], got {self.dose_ratio}"
+                )
+            if self.injection_mode != "add":
+                raise InvalidConfigError(
+                    "Dose ratios apply to add mode; set dose_ratio=None and use "
+                    f"coefficient for {self.injection_mode!r} mode"
+                )
+
         if not 0.0 <= self.coefficient <= 2.0:
             raise InvalidConfigError(f"Coefficient must be between 0.0 and 2.0, got {self.coefficient}")
         
@@ -244,6 +268,8 @@ class QuranSteerer:
         self.quran_embeddings: Optional[Dict[str, Any]] = None
         self.steering_vectors: Optional[Dict[int, torch.Tensor]] = None
         self.config = SteeringConfig()
+        # Median token norm per layer, measured by calibrate_dose
+        self.dose_calibration: Optional[Dict[str, Any]] = None
         self.last_run_diagnostics = {}
         self.last_run_settings = {}
         
@@ -277,6 +303,7 @@ class QuranSteerer:
                 trust_remote_code=self.trust_remote_code,
             )
             self.llm.load_model()
+            self.dose_calibration = None  # norms belong to the previous model
 
     def initialize_knowledge_base(self, persist_dir: str = "quran_db") -> None:
         """Initialize the knowledge base, sharing the loaded embedder if any."""
@@ -637,6 +664,7 @@ class QuranSteerer:
         if not math.isfinite(blend_ratio) or not 0 <= blend_ratio <= 1:
             raise InvalidConfigError("Dynamic blend ratio must be in [0, 1]")
         self._validate_vectors(dynamic_vectors)
+        self._ensure_dose_calibration()
         # Clear existing steering
         self.llm.clear_steering()
 
@@ -662,13 +690,8 @@ class QuranSteerer:
             else:
                 blended_vec = dynamic_vec
 
-            # Apply layer-specific scaling
-            scale = layer_distribution_scale(
-                layer_idx, self.llm.num_layers, self.config.layer_distribution
-            )
-
             scaled_vector = blended_vec
-            effective_coefficient = scale * self.config.coefficient
+            effective_coefficient = self._layer_coefficient(layer_idx, blended_vec)
             if self.config.injection_mode == "replace":
                 scaled_vector = blended_vec * effective_coefficient
 
@@ -994,6 +1017,7 @@ class QuranSteerer:
             )
 
         self._validate_layer_indices(target_layers)
+        self._ensure_dose_calibration()
         self.llm.clear_steering()
 
         for layer_idx in target_layers:
@@ -1001,14 +1025,8 @@ class QuranSteerer:
                 continue
 
             vector = self.steering_vectors[layer_idx]
-
-            # Apply layer-specific scaling
-            scale = layer_distribution_scale(
-                layer_idx, self.llm.num_layers, self.config.layer_distribution
-            )
-
             scaled_vector = vector
-            effective_coefficient = scale * self.config.coefficient
+            effective_coefficient = self._layer_coefficient(layer_idx, vector)
             if self.config.injection_mode == "replace":
                 scaled_vector = vector * effective_coefficient
 
@@ -1021,16 +1039,78 @@ class QuranSteerer:
 
     @serialized
     def set_steering_strength(self, coefficient: float) -> None:
-        """Adjust steering strength without recomputing vectors."""
+        """Switch to a raw coefficient without recomputing vectors.
+
+        This turns off ratio dosing (``dose_ratio`` becomes None); use
+        :meth:`set_dose_ratio` for a dose that transfers between models.
+        """
+        self._update_dose(dose_ratio=None, coefficient=coefficient)
+
+    @serialized
+    def set_dose_ratio(self, dose_ratio: float) -> None:
+        """Set the target relative perturbation without recomputing vectors."""
+        self._update_dose(dose_ratio=dose_ratio)
+
+    def _update_dose(self, **changes) -> None:
         self._ensure_llm_loaded()
-        previous = self.config.coefficient
-        self.config.coefficient = coefficient
+        previous = {name: getattr(self.config, name) for name in changes}
+        for name, value in changes.items():
+            setattr(self.config, name, value)
         try:
             self.config.validate()
         except InvalidConfigError:
-            self.config.coefficient = previous
+            for name, value in previous.items():
+                setattr(self.config, name, value)
             raise
         self._apply_steering()
+
+    @serialized
+    def calibrate_dose(self, texts: Optional[List[str]] = None) -> Dict[int, float]:
+        """Measure the median token norm at every layer, the scale of dose ratios.
+
+        Runs the unsteered model over neutral sentences, by default the English
+        control set and ten Arabic control sentences. Applying a dose ratio
+        calibrates automatically the first time; call this to use other texts.
+        Special tokens are excluded as in pooling, and the median ignores
+        attention-sink tokens with massive norms.
+
+        Returns:
+            Dict mapping layer index to its median token norm
+        """
+        self._ensure_llm_loaded()
+        texts = unique_texts(calibration_texts() if texts is None else texts)
+        if not texts:
+            raise InvalidConfigError("Dose calibration needs at least one text")
+        norms = self.llm.layer_token_norms(
+            texts,
+            batch_size=STEERING_DEFAULTS.activation_batch_size,
+            exclude_special=STEERING_DEFAULTS.pool_exclude_special_tokens,
+        )
+        if not all(math.isfinite(norm) and norm > 0 for norm in norms.values()):
+            raise SteeringError("Dose calibration found non-finite or zero token norms")
+        self.dose_calibration = {
+            "texts_sha256": texts_sha256(texts),
+            "num_texts": len(texts),
+            "layer_norms": norms,
+        }
+        logger.info(f"Calibrated dose on {len(texts)} texts")
+        return norms
+
+    def _ensure_dose_calibration(self) -> None:
+        if self.config.dose_ratio is not None and self.dose_calibration is None:
+            self.calibrate_dose()
+
+    def _layer_coefficient(self, layer_idx: int, vector: torch.Tensor) -> float:
+        """Hook coefficient for one layer: raw, or set to hit the dose ratio."""
+        scale = layer_distribution_scale(
+            layer_idx, self.llm.num_layers, self.config.layer_distribution
+        )
+        if self.config.dose_ratio is None:
+            return scale * self.config.coefficient
+        # Add mode moves every token by coefficient * |vector|.
+        norm = self.dose_calibration["layer_norms"][layer_idx]
+        vector_norm = float(vector.detach().float().norm().clamp_min(1e-8))
+        return scale * self.config.dose_ratio * norm / vector_norm
 
     def _mra_context(self, prompt: str, use_domain_bridges: bool):
         """Retrieve multi-resolution context and build the MRA prompt.
@@ -1123,7 +1203,16 @@ class QuranSteerer:
             "retrieval": retrieval,
             "prompt_sha256": hashlib.sha256(final_prompt.encode()).hexdigest(),
             "steering": asdict(self.config),
+            "layer_coefficients": {
+                layer: hook.coefficient
+                for layer, hook in getattr(self.llm, "hooks", {}).items()
+                if getattr(hook, "enabled", False)
+            },
         }
+        if self.config.dose_ratio is not None and self.dose_calibration:
+            self.last_run_settings["dose_calibration"] = {
+                key: self.dose_calibration[key] for key in ("texts_sha256", "num_texts")
+            }
 
     def _check_generation_options(self, use_dynamic_steering, trusted_retrieval, dynamic_blend_ratio):
         if use_dynamic_steering and not trusted_retrieval:

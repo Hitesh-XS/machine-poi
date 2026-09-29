@@ -31,6 +31,10 @@ class LayerSteeringDiagnostics:
     mean_cosine_similarity: float
     mean_projection_magnitude: float
     relative_perturbation: float
+    # Median per-token norm and mean update norm divided by it: the achieved
+    # dose ratio. The mean norm above is inflated by attention-sink tokens.
+    median_activation_norm: float = float("nan")
+    dose_ratio: float = float("nan")
 
 
 class SteeringStats:
@@ -47,6 +51,7 @@ class SteeringStats:
 
     def reset(self) -> None:
         self.tokens = 0
+        self.token_norms = []
         self.activation_norm_sum = 0.0
         self.cosine_sum = 0.0
         self.projection_sum = 0.0
@@ -85,8 +90,10 @@ class SteeringStats:
         else:
             raise ValueError("Unknown injection mode")
 
+        norms = hidden.norm(dim=-1)
         self.tokens += hidden.shape[0]
-        self.activation_norm_sum += float(hidden.norm(dim=-1).sum())
+        self.token_norms.append(norms.cpu())
+        self.activation_norm_sum += float(norms.sum())
         self.cosine_sum += float(cosine.sum())
         self.projection_sum += float(projection.abs().sum())
         self.delta_norm_sum += float(delta.norm(dim=-1).sum())
@@ -95,13 +102,16 @@ class SteeringStats:
         if self.tokens == 0:
             return None
         activation_norm = self.activation_norm_sum / self.tokens
+        median_norm = float(torch.cat(self.token_norms).median())
+        delta_norm = self.delta_norm_sum / self.tokens
         return LayerSteeringDiagnostics(
             activation_norm=activation_norm,
             steering_norm=float(steering_vector.detach().float().norm()),
             mean_cosine_similarity=self.cosine_sum / self.tokens,
             mean_projection_magnitude=self.projection_sum / self.tokens,
-            relative_perturbation=(self.delta_norm_sum / self.tokens)
-            / max(activation_norm, self.eps),
+            relative_perturbation=delta_norm / max(activation_norm, self.eps),
+            median_activation_norm=median_norm,
+            dose_ratio=delta_norm / max(median_norm, self.eps),
         )
 
 

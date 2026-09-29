@@ -77,7 +77,7 @@ Move Quranic bridge themes into structured concept objects containing canonical 
 
 Future work should cap relative perturbation size per layer and surface warnings when coefficients cause broad hidden-state shifts.
 
-**Status:** Partially implemented. Runtime validation now rejects nonfinite vectors/configuration, blend coefficients outside [0, 1], and invalid dimensions. Hook state is serialized and restored, and clamp receives its intended coefficient. Automatic perturbation caps and calibrated behavioral warning thresholds remain planned. A small perturbation is not a universal safety guarantee; the centered SmolLM2 results still show generation collapse at a target ratio of at most 0.1. Such research thresholds cannot override guardian policy.
+**Status:** Partially implemented. Runtime validation now rejects nonfinite vectors/configuration, blend coefficients outside [0, 1], and invalid dimensions. Hook state is serialized and restored, and clamp receives its intended coefficient. High-level add-mode doses are now target relative perturbations per layer, calibrated from median token norms, and diagnostics report the achieved ratio. Automatic caps and calibrated behavioral warning thresholds remain planned. A small perturbation is not a universal safety guarantee; the centered SmolLM2 results still show generation collapse at a target ratio of at most 0.1. Such research thresholds cannot override guardian policy.
 
 ### 8. Clarify documentation
 

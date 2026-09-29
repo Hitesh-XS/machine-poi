@@ -99,7 +99,7 @@ across restarts or replicas. Details are in the [guardian guide](guardian_integr
 
 | Component | Responsibility |
 | --- | --- |
-| `QuranSteerer` | Prepare mean/persona vectors and orchestrate generation/retrieval |
+| `QuranSteerer` | Prepare mean/persona vectors, calibrate ratio doses and orchestrate generation/retrieval |
 | `ContrastiveQuranSteerer` | Construct vectors from positive and negative activation sets |
 | `SteeredLLM` | Load a checkpoint, register decoder-layer output hooks, serialize model use |
 | `QuranEmbeddings` | Load/chunk text and produce retrieval embeddings |

@@ -18,7 +18,7 @@ steerer = QuranSteerer(
     embedding_model="paraphrase-minilm",
 )
 steerer.load_models()
-steerer.config.coefficient = 0.2
+steerer.config.dose_ratio = 0.05  # the default; see "Dose" below
 steerer.prepare_quran_steering(
     chunk_by="verse", sample_size=8, cache_path="vectors/example_mean.npz"
 )
@@ -163,12 +163,46 @@ coefficient. Clamp uses `u = v / (norm(v) + 1e-8)`.
 | `replace` | `v` at every position | Erases the original hidden state; the low-level hook ignores its coefficient |
 | `clamp` | `h - dot(h, u) * u + a * u` | Sets a projection along the normalized direction, up to numerical epsilon |
 
-The high-level API applies a layer-distribution scale to the configured
-coefficient. For `replace`, it scales the vector before registering the hook.
-`SteeringConfig` accepts finite coefficients in [0, 2], with [0, 1] for blend;
-the low-level hook accepts finite coefficients, with the same blend constraint.
-These are configuration bounds, not validated safety thresholds. Low-level
-experiment coefficients and normalized high-level vectors are not interchangeable.
+The high-level API applies a layer-distribution scale to the hook coefficient.
+For `replace`, it scales the vector before registering the hook.
+`SteeringConfig` accepts dose ratios in [-1, 1] and raw coefficients in [0, 2],
+with [0, 1] for blend; the low-level hook accepts any finite coefficient, with the
+same blend constraint. These are configuration bounds, not validated safety
+thresholds.
+
+## Dose
+
+The high-level dose is a **target relative perturbation**, `SteeringConfig.dose_ratio`
+(default 0.05). At each steered layer the hook coefficient is
+
+    a_l = dose_ratio * scale_l * n_l / norm(v_l)
+
+where `scale_l` is the layer-distribution scale and `n_l` is the layer's median
+per-token hidden-state norm on a calibration set. Add mode then moves every token
+by `dose_ratio * scale_l * n_l`. The first application calibrates on the English
+control sentences plus ten Arabic ones (`machine_poi.controls.calibration_texts`);
+call `steerer.calibrate_dose(texts)` to use other texts. Calibration pools content
+tokens only, and the median ignores the first-position attention-sink token,
+whose norm can be orders of magnitude above the rest. `last_run_settings` records
+the per-layer coefficients and a hash of the calibration texts.
+
+Ratios, not raw coefficients, transfer between models. High-level vectors are
+unit-norm, and the norms of committed mean-activation vectors range from 59–96
+(Gemma 4) to about 2,375 (SmolLM2), so a coefficient that moves one model
+noticeably is inert on another. Presets are ratios: `gentle` 0.02, `moderate` and
+`focused` and `workspace` 0.05, `strong` 0.1. The calibrated Gemma runs in the
+committed results changed behavior at a relative perturbation of about 0.08, but
+that figure divides by the mean token norm; the median-based ratio of the same
+update is higher. These presets are starting points, not validated doses. A
+negative ratio steers away from the direction, for ablations.
+
+Dose ratios apply to add mode. For blend, replace or clamp, set
+`dose_ratio=None` and a raw `coefficient`; `set_steering_strength(c)` does this,
+and `set_dose_ratio(r)` switches back. The achieved ratio varies with the prompt,
+since calibration is fixed: `last_run_diagnostics[layer].dose_ratio` reports the
+mean update norm divided by the run's median token norm
+(`median_activation_norm`). The older `relative_perturbation` divides by the
+mean token norm instead, which the attention-sink token inflates.
 
 **Clamp coefficient zero still removes the existing projection.** Use
 `steering_disabled()` or `generate_unsteered()` for an unsteered baseline. No
@@ -206,7 +240,8 @@ graph context; use `generate_with_graph` for that. `SteeredLLM.generate` raises
 `last_run_settings` records what the latest `generate`, `compare` or graph run
 actually used: seed, greedy or sampling (with the effective temperature, which
 reasoning mode can override), chat templating, retrieval, a SHA-256 of the final
-prompt and the steering configuration. Record it next to any output you report.
+prompt, the steering configuration and the per-layer hook coefficients. Record it
+next to any output you report.
 
 ## Model loading and cache migration
 
@@ -229,7 +264,7 @@ wrapper APIs for serialized inference; direct model/hook mutation bypasses them.
 
 ```bash
 python main.py --help
-python main.py --llm qwen2.5-0.5b --coefficient 0.2 --prompt "What is justice?"
+python main.py --llm qwen2.5-0.5b --dose-ratio 0.05 --prompt "What is justice?"
 python main.py --quran-persona --interactive
 python main.py --preset workspace --layer-distribution workspace --interactive
 python main.py --init-db
@@ -250,8 +285,9 @@ configures the graph provider and enables graph index building with
 | `--llm`, `--llm-path` | Registered alias, or `--llm custom --llm-path MODEL_PATH`; default `deepseek-r1-1.5b` |
 | `--embedding` | Registered embedding alias; default `paraphrase-minilm` |
 | `--revision`, `--trust-remote-code` | LLM revision and reviewed-code opt-in; opt-in requires a full commit hash |
-| `--preset` | `gentle`, `moderate`, `strong`, `focused`, `workspace`; when omitted, a registered model's recommended coefficient and layers apply, with `moderate` for the remaining settings |
-| `--coefficient` | Override strength, including `0`; validated before models load: [0, 2], blend [0, 1] |
+| `--preset` | `gentle`, `moderate`, `strong`, `focused`, `workspace`; when omitted, `moderate` with a registered model's recommended layers |
+| `--dose-ratio` | Target relative perturbation per layer, in [-1, 1]; negative steers away; add mode only |
+| `--coefficient` | Raw coefficient instead of a ratio, including `0`: [0, 2], blend [0, 1]; required for blend, replace and clamp |
 | `--injection-mode` | `add`, `blend`, `replace`, `clamp` |
 | `--layer-distribution` | `uniform`, `bell`, `focused`, `workspace` |
 | `--chunk-by`, `--quran-persona`, `--theme` | Select text resolution (default from preset), weighted persona, or thematic preparation |
@@ -266,10 +302,13 @@ configures the graph provider and enables graph index building with
 | `--llm-provider`, `--llm-api-model` | Provider (`openai`, `gemini`, `ollama`) and its model name |
 
 Settings resolve in this order: an explicit flag, then `--preset`, then the
-model's recommendation, then `moderate`. `--layer-distribution` selects layers
+model's recommended layers, then `moderate`. `--dose-ratio` and `--coefficient`
+are mutually exclusive, and a non-add `--injection-mode` needs `--coefficient`.
+Both are validated before models load. `--layer-distribution` selects layers
 from that distribution instead of a model's recommended layers. A zero
 coefficient is applied as given; remember that zero clamp is not an unsteered
-baseline.
+baseline. In interactive mode, `strength <value>` changes whichever kind of dose
+the run uses.
 
 ## Registered model aliases
 
@@ -287,8 +326,8 @@ layer count come from the loaded checkpoint.
 | `qwen3-0.6b` | `Qwen/Qwen3-0.6B` |
 | `smollm3` | `HuggingFaceTB/SmolLM3-3B` |
 | `gemma-270m` | `google/gemma-3-270m-it` |
-| `gemma-4-e2b` | `google/gemma-4-E2B-it` (no recommended dose; uses the preset) |
-| `gemma-4-e4b` | `google/gemma-4-E4B-it` (no recommended dose; uses the preset) |
+| `gemma-4-e2b` | `google/gemma-4-E2B-it` (no recommended layers; uses the preset's distribution) |
+| `gemma-4-e4b` | `google/gemma-4-E4B-it` (no recommended layers; uses the preset's distribution) |
 | `qwen2.5-0.5b` | `Qwen/Qwen2.5-0.5B-Instruct` |
 | `smollm2-135m` | `HuggingFaceTB/SmolLM2-135M-Instruct` |
 | `smollm2-360m` | `HuggingFaceTB/SmolLM2-360M-Instruct` |

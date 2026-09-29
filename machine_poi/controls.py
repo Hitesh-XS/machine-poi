@@ -45,3 +45,8 @@ def neutral_texts(language: str = "ar") -> List[str]:
 def texts_sha256(texts: Iterable[str]) -> str:
     """Order-sensitive hash of a text set, for cache and result metadata."""
     return hashlib.sha256("\n".join(texts).encode("utf-8")).hexdigest()
+
+
+def calibration_texts() -> List[str]:
+    """Neutral sentences for dose calibration: the English set and ten Arabic ones."""
+    return neutral_texts("en") + neutral_texts("ar")[:10]
