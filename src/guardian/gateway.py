@@ -217,7 +217,10 @@ class Gateway:
     def _decision(self, action, verdict, reason):
         return Decision(verdict, reason, action.fingerprint, self._policy.version)
 
-    def _assess(self, caller, action, *, approved=False):
+    def _assess(self, caller, action, *, approved=False, dispatched=False):
+        # PAUSED holds new dispatch only. An action that was authorized and
+        # reserved before a concurrent review paused the run may still start;
+        # stop, expiry and scope/binding changes are rechecked regardless.
         record = self._runs.get(action.run_id)
         if self._failed:
             return (
@@ -241,7 +244,11 @@ class Gateway:
                     None,
                     self._decision(action, Verdict.STOP, "run_stopped"),
                 )
-            if item.state == RunState.PAUSED and not (approved and item is record):
+            if (
+                item.state == RunState.PAUSED
+                and not dispatched
+                and not (approved and item is record)
+            ):
                 return (
                     record,
                     None,
@@ -469,7 +476,7 @@ class Gateway:
             context.checkpoint()
             with self._lock:
                 _, current_tool, current_scope, current = self._assess(
-                    record.grant.principal, action
+                    record.grant.principal, action, dispatched=True
                 )
                 permitted = current.verdict == Verdict.ALLOW or (
                     current.verdict == Verdict.REVIEW
