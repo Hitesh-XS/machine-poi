@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 """
-Experiment Reproduction Script for Machine-POI Paper
+Demonstration runner for the Machine-POI steering library.
 
-This script reproduces the experimental results described in PAPER.md:
-1. Qualitative comparison (steered vs unsteered outputs)
-2. Thematic consistency analysis
-3. Coefficient sensitivity testing
+It prints sample outputs; it is not the evidence for PAPER.md. Steering claims
+cite experiments/steering_eval.py, which scores held-out prompts with
+confidence intervals. Sections:
+1. 5.1: steered and unsteered outputs for a few prompts
+2. mra: one multi-resolution retrieval answer
+3. 5.3: outputs across dose ratios
+
+Section 5.2, which counted English keywords as a "thematic" score, is retired;
+use the harness's thematic proxy and blinded rating sheet instead.
 
 Usage:
     python experiments/reproduce_paper.py [--model MODEL] [--quick]
 
 Requirements:
-    - GPU with at least 8GB VRAM (recommended)
-    - Dependencies from requirements.txt installed
+    - pip install -e ".[research]"
+    - A GPU helps; the default model also runs on CPU
 """
 
 import argparse
@@ -81,108 +86,51 @@ def run_mra_comparison(steerer: QuranSteerer, prompt: str) -> dict:
     return {"prompt": prompt, "mra_output": mra_output}
 
 
-def run_thematic_analysis(steerer: QuranSteerer, theme: str, prompts: list[str]) -> dict:
-    """
-    Run thematic consistency analysis.
-    Reproduces Section 5.2 of the paper.
-    """
+def run_dose_demo(steerer: QuranSteerer, prompt: str, dose_ratios: list[float]) -> list[dict]:
+    """Print outputs across dose ratios (section 5.3); a demonstration, not a score."""
     print("\n" + "=" * 70)
-    print(f"THEMATIC CONSISTENCY ANALYSIS: '{theme}' (Section 5.2)")
+    print("DOSE DEMONSTRATION (Section 5.3)")
     print("=" * 70)
-    
-    theme_keywords = {
-        "mercy": ["mercy", "merciful", "compassion", "kind", "forgive", "rahma"],
-        "patience": ["patience", "patient", "sabr", "endure", "persevere"],
-        "justice": ["justice", "just", "fair", "equality", "right"],
-    }
-    
-    keywords = theme_keywords.get(theme.lower(), [theme.lower()])
-    
-    steered_keyword_count = 0
-    unsteered_keyword_count = 0
-    steered_religious_refs = 0
-    unsteered_religious_refs = 0
-    
-    religious_markers = ["allah", "god", "divine", "quran", "prophet", "faith", "worship"]
-    
-    for prompt in prompts:
-        steered, unsteered = steerer.compare(prompt, max_new_tokens=100)
-        
-        # Count keywords
-        for kw in keywords:
-            steered_keyword_count += steered.lower().count(kw)
-            unsteered_keyword_count += unsteered.lower().count(kw)
-        
-        # Count religious references
-        for marker in religious_markers:
-            if marker in steered.lower():
-                steered_religious_refs += 1
-            if marker in unsteered.lower():
-                unsteered_religious_refs += 1
-    
-    n = len(prompts)
-    results = {
-        "theme": theme,
-        "prompts_tested": n,
-        "steered_keyword_freq": steered_keyword_count / n,
-        "unsteered_keyword_freq": unsteered_keyword_count / n,
-        "steered_religious_rate": (steered_religious_refs / n) * 100,
-        "unsteered_religious_rate": (unsteered_religious_refs / n) * 100,
-    }
-    
-    print(f"\n📊 Results for theme '{theme}':")
-    print(f"   Keyword frequency (steered):   {results['steered_keyword_freq']:.1f} / response")
-    print(f"   Keyword frequency (unsteered): {results['unsteered_keyword_freq']:.1f} / response")
-    print(f"   Religious refs (steered):      {results['steered_religious_rate']:.0f}%")
-    print(f"   Religious refs (unsteered):    {results['unsteered_religious_rate']:.0f}%")
-    
-    return results
 
-
-def run_coefficient_sensitivity(steerer: QuranSteerer, prompt: str, coefficients: list[float]) -> list[dict]:
-    """
-    Test sensitivity to steering coefficient.
-    Reproduces Section 5.3 of the paper.
-    """
-    print("\n" + "=" * 70)
-    print("COEFFICIENT SENSITIVITY ANALYSIS (Section 5.3)")
-    print("=" * 70)
-    
     print(f"\n📝 Test Prompt: {prompt}")
-    
+
     results = []
-    
-    for coef in coefficients:
-        steerer.set_steering_strength(coef)
-        output = steerer.generate(prompt, max_new_tokens=100)
-        
-        result = {
-            "coefficient": coef,
-            "output_length": len(output),
-            "output_preview": output[:200] + "..." if len(output) > 200 else output,
-        }
-        results.append(result)
-        
-        print(f"\n   α = {coef}:")
-        print(f"   Output: {result['output_preview']}")
-    
-    # Reset to default
-    steerer.set_steering_strength(0.5)
-    
+    previous = steerer.config.dose_ratio
+    try:
+        for ratio in dose_ratios:
+            steerer.set_dose_ratio(ratio)
+            output = steerer.generate(prompt, max_new_tokens=100)
+            result = {
+                "dose_ratio": ratio,
+                "output_length": len(output),
+                "output_preview": output[:200] + "..." if len(output) > 200 else output,
+            }
+            results.append(result)
+            print(f"\n   dose ratio {ratio}:")
+            print(f"   Output: {result['output_preview']}")
+    finally:
+        if previous is not None:
+            steerer.set_dose_ratio(previous)
+
     return results
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Reproduce Machine-POI paper experiments")
+    parser = argparse.ArgumentParser(description="Machine-POI steering demonstrations")
     parser.add_argument("--model", default="deepseek-r1-1.5b", help="LLM model to use")
     parser.add_argument("--embedding", default="paraphrase-minilm", help="Embedding model to use")
     parser.add_argument("--quick", action="store_true", help="Run quick version with fewer prompts")
     parser.add_argument("--section", choices=["all", "5.1", "5.2", "5.3", "mra"], 
-                        default="all", help="Which section to reproduce")
+                        default="all", help="Which section to run (5.2 is retired)")
     args = parser.parse_args()
-    
+
+    if args.section == "5.2":
+        print("Section 5.2 (keyword counting) is retired. Run "
+              "experiments/steering_eval.py; see docs/evaluation.md.")
+        return
+
     print("=" * 70)
-    print("MACHINE-POI PAPER REPRODUCTION")
+    print("MACHINE-POI STEERING DEMONSTRATION")
     print(f"Model: {args.model} | Embedding: {args.embedding}")
     print("=" * 70)
     
@@ -204,15 +152,8 @@ def main():
         "How should I deal with a bug in my code?",
     ]
     
-    mercy_prompts = [
-        "Describe what mercy means.",
-        "How should we show mercy to others?",
-        "Tell me about compassion and kindness.",
-    ]
-    
     if args.quick:
         qualitative_prompts = qualitative_prompts[:1]
-        mercy_prompts = mercy_prompts[:2]
     
     # Run experiments based on selection
     if args.section in ["all", "5.1"]:
@@ -221,18 +162,11 @@ def main():
     if args.section in ["all", "mra"]:
         run_mra_comparison(steerer, "How should I deal with a bug in my code?")
     
-    if args.section in ["all", "5.2"]:
-        run_thematic_analysis(steerer, "mercy", mercy_prompts)
-    
     if args.section in ["all", "5.3"]:
-        run_coefficient_sensitivity(
-            steerer, 
-            "What is patience?", 
-            [0.2, 0.5, 0.8, 1.2]
-        )
+        run_dose_demo(steerer, "What is patience?", [0.02, 0.05, 0.1, 0.2])
     
     print("\n" + "=" * 70)
-    print("✅ EXPERIMENT REPRODUCTION COMPLETE")
+    print("✅ DEMONSTRATION COMPLETE")
     print("=" * 70)
 
 

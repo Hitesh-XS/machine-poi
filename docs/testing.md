@@ -119,19 +119,23 @@ The [research note](../PAPER.md) describes the implemented methods. The historic
 [model result report](../experiments/results/README.md) links raw JSON traces and
 run conditions. Do not treat those runs as tests of the guardian changes.
 
-The older demonstration runner accepts `--model`, not `--llm`:
+Steering claims come from the evaluation harness, which scores held-out
+prompts with confidence intervals ([evaluation guide](evaluation.md)):
+
+```bash
+python experiments/steering_eval.py --spec experiments/specs/qwen2.5-0.5b.json
+```
+
+The older demonstration runner accepts `--model`, not `--llm`, and prints
+sample outputs without scoring them:
 
 ```bash
 python experiments/reproduce_paper.py --model deepseek-r1-1.5b --section 5.1 --quick
-python experiments/reproduce_paper.py --section 5.2 --quick
 python experiments/reproduce_paper.py --section 5.3 --quick
 ```
 
-These commands load models and generate new outputs. Section 5.2 counts English
-substring matches and distinct religious markers per response. Its rate can
-exceed 100%; it is not a probability, a coherence score or a semantic benchmark.
-Section 5.3 prints text previews and lengths rather than a validated quality score.
-The script does not reproduce an independently scored thematic/coherence table.
+Section 5.3 prints outputs across dose ratios. Section 5.2, which counted English
+keywords as a thematic score, is retired.
 
 For attention-transport comparisons, inspect these entry points before selecting
 checkpoint, dose, prompts and output path:

@@ -120,6 +120,7 @@ steering defaults off and requires an explicit trusted-corpus opt-in.
 | [Guardian integration](docs/guardian_integration.md) | Runnable API example, grants, approvals, failures and host rollout |
 | [Steering guide](docs/steering_guide.md) | Python/CLI usage, model aliases, injection semantics and migration |
 | [Testing and evaluation](docs/testing.md) | Minimal and full test environments, evidence and experiment limits |
+| [Steering evaluation](docs/evaluation.md) | Evaluation harness spec, held-out prompts, metrics, rating rubric and provenance |
 | [Containment plan](docs/rogue_agent_containment_plan.md) | Baseline findings, delivered slices and remaining deployment gates |
 | [Research note](PAPER.md) | Implemented steering methods and the evidence supporting current claims |
 | [Workspace research roadmap](docs/global_workspace_improvement_plan.md) | Diagnostic work and experiments still planned |
@@ -137,6 +138,7 @@ steering defaults off and requires an explicit trusted-corpus opt-in.
 | `machine_poi/retrieval_context.py`, `machine_poi/steering_cache.py` | Quoted/bounded context and numeric steering caches |
 | `machine_poi/knowledge_base.py`, `machine_poi/hybrid_knowledge_base.py` | Vector and optional graph retrieval |
 | `machine_poi/workspace_diagnostics.py`, `machine_poi/transport_stats.py` | Activation/transport summaries and paired statistics |
+| `machine_poi/evaluation.py`, `experiments/steering_eval.py` | Evaluation metrics and the harness that produces reported steering results |
 | `machine_poi/cli.py`, `machine_poi/config.py`, `main.py` | Research CLI, model aliases and presets; `main.py` launches the CLI from a checkout |
 | `pyproject.toml`, `ci-constraints.txt` | Package metadata and extras; versions pinned in CI |
 | `experiments/` | Model experiments and historical results |
