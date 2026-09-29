@@ -133,9 +133,15 @@ async def main():
 asyncio.run(main())
 ```
 
-`query_mode` accepts `vector`, `graph`, `hybrid` or `auto`. Async retrieval completes
-before the synchronous steering session starts; do not hold that session across
-an `await`. Provider calls and index storage need their own authorization boundary
+`query_mode` accepts `vector`, `graph`, `hybrid` or `auto`. Graph bridges start
+from seed entities: concepts mapped from query terms, plus graph labels named in the
+query. They are the seeds' direct neighbors in the LightRAG graph, ranked by edge
+weight, with thematic relation types (such as "requires" or "leads to") counted
+double. `HybridQueryResult.graph_entities` and `graph_relationships` report the
+seeds and edges used. Without a usable graph the bridges fall back to embedding
+similarity with the curated themes, then to the unverified seed concepts; the
+confidence scores show which source applied. Async retrieval completes before the
+synchronous steering session starts; do not hold that session across an `await`. Provider calls and index storage need their own authorization boundary
 when incorporated into an agent host.
 
 ## Injection semantics

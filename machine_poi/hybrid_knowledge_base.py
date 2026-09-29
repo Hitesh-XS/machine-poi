@@ -6,7 +6,7 @@ for comprehensive Quranic knowledge access.
 """
 
 import logging
-from typing import Dict, List, Optional, Union, TYPE_CHECKING
+from typing import Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -28,18 +28,18 @@ class HybridQueryResult:
     # Vector-based results (existing)
     vector_results: Dict[str, List[Dict]]
 
-    # Graph-based results (new)
+    # Graph-based results: the LightRAG answer, plus the entities and
+    # (entity, relation, neighbor) edges that bridge generation traversed
     graph_answer: Optional[str]
     graph_entities: List[str]
-    graph_relationships: List[Dict]
+    graph_relationships: List[Tuple[str, str, str]]
 
     # Generated bridges
     bridges: List[str]
     bridge_confidence: Dict[str, float]
 
-    # Fusion metadata
+    # Resolved query mode ("auto" becomes "vector" or "hybrid")
     query_mode: str
-    fusion_strategy: str
 
 
 class HybridQuranKnowledgeBase:
@@ -178,7 +178,6 @@ class HybridQuranKnowledgeBase:
         n_graph_results: int = 5,
         use_bridges: bool = True,
         max_bridges: int = 3,
-        fusion_strategy: str = "interleave",
     ) -> HybridQueryResult:
         """
         Query the hybrid knowledge base.
@@ -190,7 +189,6 @@ class HybridQuranKnowledgeBase:
             n_graph_results: Number of graph results
             use_bridges: Whether to use domain bridges
             max_bridges: Maximum bridges to generate
-            fusion_strategy: How to combine results ("interleave", "graph_first", "vector_first")
 
         Returns:
             HybridQueryResult with combined results
@@ -222,6 +220,8 @@ class HybridQuranKnowledgeBase:
             )
             bridges = bridge_result.bridges
             bridge_confidence = bridge_result.confidence_scores
+            graph_entities = bridge_result.entities_found
+            graph_relationships = bridge_result.relationships_traversed
 
         # Vector retrieval
         if mode in ("vector", "hybrid"):
@@ -246,8 +246,6 @@ class HybridQuranKnowledgeBase:
                     top_k=n_graph_results,
                 )
                 graph_answer = graph_result.get("answer")
-                # Extract entities and relationships from graph result
-                # (Implementation depends on LightRAG's output format)
             except Exception as e:
                 logger.warning(f"Graph query failed: {e}")
 
@@ -259,7 +257,6 @@ class HybridQuranKnowledgeBase:
             bridges=bridges,
             bridge_confidence=bridge_confidence,
             query_mode=mode,
-            fusion_strategy=fusion_strategy,
         )
 
     def query_sync(

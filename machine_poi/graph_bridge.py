@@ -6,6 +6,7 @@ to relevant Quranic themes through entity-relationship traversal.
 """
 
 import logging
+import re
 from typing import List, Dict, Optional, Set, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 import numpy as np
@@ -109,6 +110,53 @@ class GraphBridgeGenerator:
         """Extract relevant terms from user query."""
         return matching_keywords(query, self.TERM_TO_ENTITY)
 
+    @staticmethod
+    def _normalize(name: str) -> str:
+        return " ".join(name.replace("_", " ").lower().split())
+
+    async def _seed_labels(self, query: str, terms: List[str]) -> List[str]:
+        """Graph labels for the mapped seed concepts and for labels named in the query."""
+        try:
+            labels = await self._get_entity_names()
+        except Exception as e:
+            logger.warning(f"Graph labels unavailable: {e}")
+            return []
+        by_name = {self._normalize(label): label for label in labels}
+        seeds = [
+            by_name[self._normalize(entity)]
+            for term in terms
+            for entity in self.TERM_TO_ENTITY[term]
+            if self._normalize(entity) in by_name
+        ]
+        query_text = self._normalize(query)
+        seeds += [
+            label
+            for name, label in by_name.items()
+            if re.search(rf"\b{re.escape(name)}\b", query_text)
+        ]
+        return list(dict.fromkeys(seeds))
+
+    def _neighbors(self, seed: str, graph) -> List[Tuple[str, str, float]]:
+        """Direct neighbors of seed as (neighbor, relation, score).
+
+        Edges whose keywords name a BRIDGE_RELATIONSHIPS type score double.
+        """
+        found = []
+        for edge in getattr(graph, "edges", None) or []:
+            if seed not in (edge.source, edge.target) or edge.source == edge.target:
+                continue
+            neighbor = edge.target if edge.source == seed else edge.source
+            properties = edge.properties or {}
+            relation = str(properties.get("keywords") or edge.type or "related")
+            text = self._normalize(relation)
+            thematic = any(self._normalize(kind) in text for kind in self.BRIDGE_RELATIONSHIPS)
+            try:
+                weight = float(properties.get("weight", 1.0))
+            except (TypeError, ValueError):
+                weight = 1.0
+            found.append((neighbor, relation, weight * (2.0 if thematic else 1.0)))
+        return found
+
     async def generate_bridges(
         self,
         query: str,
@@ -120,10 +168,16 @@ class GraphBridgeGenerator:
         Generate domain bridges for a query using the knowledge graph.
 
         Algorithm:
-        1. Extract terms from query
-        2. Map terms to graph entities
-        3. Traverse relationships to find connected Quranic concepts
-        4. Rank by relevance and return top bridges
+        1. Map query terms (TERM_TO_ENTITY) and graph labels named in the
+           query to entities in the graph
+        2. Collect the direct neighbors of up to three seed entities, ranked by
+           edge weight, doubled for thematic relation types
+        3. Otherwise fall back to embedding similarity with QURANIC_THEMES,
+           then to the mapped seed concepts themselves
+
+        Confidence is the neighbor's score relative to the best neighbor for
+        graph bridges, cosine similarity for embedding bridges, and 0.5 for
+        unverified seed concepts.
 
         Args:
             query: User query string
@@ -139,49 +193,37 @@ class GraphBridgeGenerator:
         relationships: List[Tuple[str, str, str]] = []
         confidence: Dict[str, float] = {}
 
-        # 1. Extract query terms
         terms = self._extract_query_terms(query)
+        seed_entities = list(
+            dict.fromkeys(entity for term in terms for entity in self.TERM_TO_ENTITY[term])
+        )
 
-        # 2. Map terms to seed entities
-        seed_entities = []
-        for term in terms:
-            if term in self.TERM_TO_ENTITY:
-                seed_entities.extend(self.TERM_TO_ENTITY[term])
-
-        if not seed_entities and use_graph:
-            # Try direct query to find relevant entities
-            try:
-                result = await self.lightrag.query(
-                    query=f"What Quranic concepts relate to: {query}",
-                    mode="global",
-                    top_k=5,
-                )
-                # Parse entities from result (implementation depends on LightRAG output)
-                # This is a simplified extraction
-                if result.get("answer"):
-                    entities_found.append(result["answer"][:100])
-            except Exception as e:
-                logger.warning(f"Graph query failed: {e}")
-
-        # 3. Traverse graph from seed entities
-        if use_graph and seed_entities:
-            for entity in seed_entities[:3]:  # Limit seed entities
+        if use_graph:
+            scores: Dict[str, float] = {}
+            for seed in (await self._seed_labels(query, terms))[:3]:
                 try:
-                    neighbors = await self.lightrag.get_entity_neighbors(
-                        entity_name=entity,
+                    graph = await self.lightrag.get_entity_neighbors(
+                        entity_name=seed,
                         max_depth=self.max_depth,
                         max_nodes=10,
                     )
-
-                    if neighbors:
-                        entities_found.append(entity)
-                        # Extract bridge concepts from neighbors
-                        # (Implementation depends on LightRAG's KG structure)
-
                 except Exception as e:
-                    logger.debug(f"No graph data for entity '{entity}': {e}")
+                    logger.debug(f"No graph data for entity '{seed}': {e}")
+                    continue
+                entities_found.append(seed)
+                for neighbor, relation, score in self._neighbors(seed, graph):
+                    relationships.append((seed, relation, neighbor))
+                    scores[neighbor] = max(score, scores.get(neighbor, 0.0))
+            ranked = sorted(
+                (name for name in scores if name not in entities_found),
+                key=lambda name: -scores[name],
+            )[:max_bridges]
+            if ranked:
+                best = scores[ranked[0]]
+                bridges = ranked
+                confidence = {name: scores[name] / best for name in ranked}
 
-        # 4. Fallback to embedding similarity
+        # Fallback to embedding similarity
         if not bridges and use_embedding_fallback and self.embedder:
             similarities = np.dot(
                 theme_index(self.embedder), embed_query(self.embedder, query)
@@ -193,12 +235,11 @@ class GraphBridgeGenerator:
                     bridges.append(QURANIC_THEMES[idx])
                     confidence[QURANIC_THEMES[idx]] = float(similarities[idx])
 
-        # Add seed entity themes as bridges if graph traversal didn't yield results
+        # Unverified seed concepts as a last resort
         if not bridges:
             for entity in seed_entities[:max_bridges]:
-                if entity not in bridges:
-                    bridges.append(entity)
-                    confidence[entity] = 0.5  # Default confidence
+                bridges.append(entity)
+                confidence[entity] = 0.5
 
         return BridgeResult(
             bridges=bridges[:max_bridges],

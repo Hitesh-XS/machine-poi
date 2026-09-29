@@ -277,7 +277,6 @@ class SteeringDefaults:
     
     # Hybrid query settings
     hybrid_query_mode: str = "hybrid"  # "vector", "graph", "hybrid", "auto"
-    hybrid_fusion_strategy: str = "interleave"  # "interleave", "graph_first", "vector_first"
 
 
 # Global defaults instance

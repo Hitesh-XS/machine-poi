@@ -306,11 +306,3 @@ class QuranKnowledgeBase:
             final_results[res_name] = sorted_items[:n_results]
 
         return final_results
-
-    def get_weighted_embedding(self, query_results: Dict[str, List[Dict]]) -> Dict[str, float]:
-        """
-        Calculate a comprehensive strategy for steering based on retrieved results.
-        This is a placeholder for more advanced logic.
-        """
-        # Not used for steering directly yet, but helpful for logic
-        pass

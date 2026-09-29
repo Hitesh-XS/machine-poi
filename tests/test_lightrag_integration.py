@@ -171,7 +171,6 @@ class TestHybridQuranKnowledgeBase:
             bridges=["patience"],
             bridge_confidence={"patience": 0.8},
             query_mode="hybrid",
-            fusion_strategy="interleave",
         )
         
         assert result.graph_answer == "Test answer"
