@@ -864,9 +864,15 @@ class SteeredLLM:
         texts: List[str],
         layers: Optional[List[int]] = None,
         batch_size: int = 8,
+        exclude_special: bool = True,
     ) -> Dict[int, torch.Tensor]:
         """
         Mean unsteered hidden state of each text at each layer, in batches.
+
+        With ``exclude_special`` (the default), BOS, EOS and other special
+        token positions are left out of the mean: they carry large generic
+        activations (attention sinks) shared by every text. Set it to False
+        to average every non-padding position, as before.
 
         Texts are right-padded so real tokens see the same positions and
         context as when run alone; padding is excluded from the mean. Batches
@@ -912,8 +918,16 @@ class SteeredLLM:
             with self.steering_disabled(), torch.no_grad():
                 for start in range(0, len(texts), batch_size):
                     batch = [texts[index] for index in order[start:start + batch_size]]
-                    encoded = self.tokenizer(batch, return_tensors="pt", padding=True)
-                    current["mask"] = encoded["attention_mask"]
+                    encoded = self.tokenizer(
+                        batch,
+                        return_tensors="pt",
+                        padding=True,
+                        return_special_tokens_mask=exclude_special,
+                    )
+                    mask = encoded["attention_mask"]
+                    if exclude_special:
+                        mask = mask * (1 - encoded["special_tokens_mask"])
+                    current["mask"] = mask
                     self.model(
                         input_ids=encoded["input_ids"].to(self.model.device),
                         attention_mask=encoded["attention_mask"].to(self.model.device),

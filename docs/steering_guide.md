@@ -182,7 +182,10 @@ add/blend/replace/clamp delta. Hooks no longer copy hidden states; register with
 `capture=True` to keep the latest hidden states in `captured_activation`.
 Vector preparation pools activations in batches with `pooled_layer_means`, which
 right-pads each batch, masks padding out of the mean and matches one-text-at-a-time
-pooling to floating-point tolerance. `get_attention_transport_diagnostics(prompt)` makes a separate
+pooling to floating-point tolerance. BOS, EOS and other special-token positions are
+also left out of the mean, because the first position carries a large activation
+shared by every text. Set `STEERING_DEFAULTS.pool_exclude_special_tokens = False`
+to average every token as before; cache metadata records which pooling was used. `get_attention_transport_diagnostics(prompt)` makes a separate
 forward pass; wrap it in `steering_disabled()` for its baseline. Geometry and
 perturbation metrics are research measurements, not action authorization signals.
 

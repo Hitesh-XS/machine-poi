@@ -683,7 +683,9 @@ class QuranSteerer:
     def _pooled_activations(self, texts: List[str]) -> Dict[int, torch.Tensor]:
         """Per-text mean activations at every layer, {layer: [num_texts, hidden]}."""
         return self.llm.pooled_layer_means(
-            list(texts), batch_size=STEERING_DEFAULTS.activation_batch_size
+            list(texts),
+            batch_size=STEERING_DEFAULTS.activation_batch_size,
+            exclude_special=STEERING_DEFAULTS.pool_exclude_special_tokens,
         )
 
     def _unit(self, vector: torch.Tensor) -> torch.Tensor:
@@ -701,6 +703,8 @@ class QuranSteerer:
                 "revision": revision or "unresolved",
                 "corpus_sha256": hashlib.sha256(self.quran_path.read_bytes()).hexdigest(),
                 "hidden_size": self.llm.hidden_size, "num_layers": self.llm.num_layers,
+                "pooling": ("content_tokens" if STEERING_DEFAULTS.pool_exclude_special_tokens
+                            else "all_tokens"),
                 "recipe": recipe, "parameters": parameters}
 
     def _save_vectors(self, path, metadata):

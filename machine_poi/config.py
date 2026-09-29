@@ -237,6 +237,10 @@ class SteeringDefaults:
 
     # Texts per forward pass when pooling activations
     activation_batch_size: int = 8
+
+    # Leave BOS/EOS/special positions out of pooled activations. False restores
+    # averaging over every token, which the attention-sink position dominates.
+    pool_exclude_special_tokens: bool = True
     
     # Sample size for Quran Persona (larger for comprehensive coverage)
     persona_sample_size: int = 100

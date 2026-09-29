@@ -504,6 +504,27 @@ class TestPrepareQuranPersona:
         assert persona_steerer.llm.register_steering_hook.called
 
 
+class TestPoolingSettings:
+    """Vector preparation passes the pooling defaults through and records them."""
+
+    def test_special_tokens_excluded_and_recorded(self, monkeypatch):
+        from machine_poi.config import STEERING_DEFAULTS
+        from machine_poi.steerer import QuranSteerer
+
+        steerer = QuranSteerer()
+        steerer.llm = Mock(spec=SteeredLLM)
+        steerer.llm.hidden_size, steerer.llm.num_layers = 4, 2
+        steerer.llm.pooled_layer_means.return_value = {0: torch.zeros(1, 4)}
+        steerer._pooled_activations(["text"])
+        assert steerer.llm.pooled_layer_means.call_args.kwargs["exclude_special"] is True
+        assert steerer._cache_metadata("mean")["pooling"] == "content_tokens"
+
+        monkeypatch.setattr(STEERING_DEFAULTS, "pool_exclude_special_tokens", False)
+        steerer._pooled_activations(["text"])
+        assert steerer.llm.pooled_layer_means.call_args.kwargs["exclude_special"] is False
+        assert steerer._cache_metadata("mean")["pooling"] == "all_tokens"
+
+
 class TestSetSteeringStrength:
     """Test steering strength adjustment."""
 

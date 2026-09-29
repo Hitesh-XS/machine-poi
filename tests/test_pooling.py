@@ -48,14 +48,36 @@ TEXTS = [
 
 def test_batched_pooling_matches_one_text_at_a_time(tiny_llm):
     tiny_llm.tokenizer.padding_side = "left"
-    batched = tiny_llm.pooled_layer_means(TEXTS, batch_size=3)
+    every_token = tiny_llm.pooled_layer_means(TEXTS, batch_size=3, exclude_special=False)
+    content = tiny_llm.pooled_layer_means(TEXTS, batch_size=3)
     assert tiny_llm.tokenizer.padding_side == "left"  # restored after right-padding
     for index, text in enumerate(TEXTS):
         single = tiny_llm.extract_layer_activations(text)
         for layer in range(3):
+            hidden = single[layer][0]
             torch.testing.assert_close(
-                batched[layer][index], single[layer][0].mean(dim=0), atol=1e-5, rtol=1e-4
+                every_token[layer][index], hidden.mean(dim=0), atol=1e-5, rtol=1e-4
             )
+            # Position 0 is [BOS]; the default mean covers content tokens only.
+            torch.testing.assert_close(
+                content[layer][index], hidden[1:].mean(dim=0), atol=1e-5, rtol=1e-4
+            )
+
+
+def test_high_norm_bos_no_longer_dominates_the_mean(tiny_llm):
+    def spike(module, inputs, output):
+        hidden = (output[0] if isinstance(output, tuple) else output).clone()
+        hidden[:, 0, :] = 1000.0  # an attention-sink-sized activation at [BOS]
+        return (hidden,) + tuple(output[1:]) if isinstance(output, tuple) else hidden
+
+    handle = tiny_llm.model.model.layers[0].register_forward_hook(spike)
+    try:
+        content = tiny_llm.pooled_layer_means(TEXTS, layers=[0])[0]
+        every_token = tiny_llm.pooled_layer_means(TEXTS, layers=[0], exclude_special=False)[0]
+    finally:
+        handle.remove()
+    assert content.abs().max() < 50
+    assert every_token.mean() > 100
 
 
 def test_pooling_is_unsteered_and_leaves_no_hooks(tiny_llm):

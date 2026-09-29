@@ -72,7 +72,9 @@ $$
 \sum_{t=1}^{|T_i|} h_l(T_i,t), \qquad v_l = \operatorname{normalize}(\mu_l).
 $$
 
-Each text receives equal weight after token pooling. The high-level persona path
+Each text receives equal weight after token pooling. The token sum runs over
+content tokens: BOS and other special tokens are excluded by default, since the
+first position carries a large generic activation shared by every text. The high-level persona path
 computes separate normalized means for verses, paragraph chunks of up to 19 verses
 within a surah, and surahs, combines them with default weights 0.50/0.35/0.15, and normalizes the
 combined vector. The contrastive path normalizes `mean(positive) - mean(negative)`.
