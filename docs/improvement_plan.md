@@ -4,8 +4,8 @@
 [Containment plan](rogue_agent_containment_plan.md) ·
 [Workspace roadmap](global_workspace_improvement_plan.md)
 
-Status: proposed, 2026-09-29. Reviewed at commit `8be027d`. Line numbers refer to
-that commit.
+Status: Phase 0 delivered 2026-09-29; later phases proposed. Reviewed at commit
+`8be027d`. Line numbers in the findings refer to that commit.
 
 This plan covers the whole repository: the guardian gateway, the steering and
 retrieval library, the CLI, the experiments and the engineering setup. It
@@ -101,7 +101,14 @@ maintainability.
 Two tracks can run in parallel: the guardian (G) and research (R/M/E). Each item
 ships with a regression test that fails before the fix.
 
-### Phase 0: correctness fixes (small, independent PRs)
+### Phase 0: correctness fixes (delivered)
+
+Delivered as one commit per item, each with regression tests that fail on the
+previous code. Two choices went beyond the table below. Without `--preset` or
+`--layer-distribution`, a registered model now steers its recommended layer band
+rather than the bell-selected band. The sync wrappers reuse one private event
+loop per thread rather than calling `asyncio.run` each time, so LightRAG
+resources stay on the loop they were created on.
 
 | Item | Change | Acceptance |
 | --- | --- | --- |
@@ -185,9 +192,10 @@ staged enforcement) stay in the [containment plan](rogue_agent_containment_plan.
 3. **Package rename (E1).** Renaming `src` to a real package name breaks
    `from src...` imports in tests and experiments. It's a one-time mechanical
    change, but external users of `src.guardian` would need to update.
-4. **G1 semantics.** The recommendation is that already-dispatched actions finish
-   while a review is pending. The stricter alternative holds them until the
-   review resolves and refunds the reservation, which adds latency and code.
+4. **G1 semantics.** Phase 0 implemented the recommendation: already-dispatched
+   actions finish while a review is pending. The stricter alternative holds them
+   until the review resolves and refunds the reservation, which adds latency and
+   code. Revisit if a host needs pause to freeze in-flight work.
 5. **Projection-based vectors (M6).** Delete them, or keep them as clearly
    labelled experiments.
 
