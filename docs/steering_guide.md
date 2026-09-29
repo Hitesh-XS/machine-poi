@@ -74,8 +74,13 @@ windows of up to 19 verses that never cross a surah boundary. The corpus file mu
 hold exactly 6,236 lines, one verse per line in mushaf order; any other layout
 raises `CorpusError` rather than misnumbering verses. An explicit `--quran-path`
 that does not exist is an error; only the default `al-quran.txt` falls back to the
-checkout's copy. This path assembles its own prompt; check checkpoint formatting
-when designing an experiment. Retrieval-derived activation steering is a separate, explicit opt-in:
+checkout's copy. Each index collection records the embedding model, its
+dimension, the corpus SHA-256 and a schema version. If any differ from the current
+configuration, for example after changing `--embedding`, queries and builds raise
+`StaleIndexError` until you run `machine-poi --init-db --rebuild`. Indexes built
+before this check existed need one rebuild. The steerer shares its loaded embedder
+with the index instead of loading a second copy. This path assembles its own
+prompt; check checkpoint formatting when designing an experiment. Retrieval-derived activation steering is a separate, explicit opt-in:
 
 ```python
 answer = steerer.generate(
@@ -235,7 +240,7 @@ configures the graph provider and enables graph index building with
 | `--seed`, `--greedy` | Seed shared by both comparison arms (default 42); decode greedily instead of sampling. Comparisons print the settings used |
 | `--interactive`, `--compare`, `--prompt` | Interactive generation, predefined comparisons, or one comparison prompt |
 | `--reasoning` | Model-specific prompt/decoding behavior; inspect it when matching experimental conditions |
-| `--init-db`, `--mra` | Build vector index; add MRA context on every generation path |
+| `--init-db`, `--rebuild`, `--mra` | Build the vector index (`--rebuild` replaces an existing one); add MRA context on every generation path |
 | `--graph-kb`, `--build-graph` | Configure graph provider; build graph with `--init-db` |
 | `--llm-provider`, `--llm-api-model` | Provider (`openai`, `gemini`, `ollama`) and its model name |
 

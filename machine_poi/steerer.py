@@ -280,12 +280,14 @@ class QuranSteerer:
             self.llm.load_model()
 
     def initialize_knowledge_base(self, persist_dir: str = "quran_db") -> None:
-        """Initialize the knowledge base."""
+        """Initialize the knowledge base, sharing the loaded embedder if any."""
         logger.info("Initializing Knowledge Base...")
         self.knowledge_base = QuranKnowledgeBase(
             persist_dir=persist_dir,
             embedding_model_name=self.embedding_model_name,
             device=self.device,
+            embedder=self.embedder,
+            quran_path=self.quran_path,
         )
 
     async def initialize_hybrid_knowledge_base(
@@ -308,6 +310,8 @@ class QuranSteerer:
             embedding_model_name=self.embedding_model_name,
             device=self.device,
             llm_func=self._llm_func,
+            embedder=self.embedder,
+            quran_path=self.quran_path,
         )
         await self.hybrid_kb.initialize()
 

@@ -15,6 +15,7 @@ from .themes import matching_keywords
 
 if TYPE_CHECKING:
     from .knowledge_base import QuranKnowledgeBase
+    from .quran_embeddings import QuranEmbeddings
     from .lightrag_adapter import QuranLightRAG
     from .graph_bridge import GraphBridgeGenerator
 
@@ -60,6 +61,8 @@ class HybridQuranKnowledgeBase:
         device: Optional[str] = None,
         llm_func: Optional[callable] = None,
         llm_model_name: str = "gpt-4o-mini",
+        embedder: Optional["QuranEmbeddings"] = None,
+        quran_path: Union[str, Path] = "al-quran.txt",
     ):
         """
         Initialize hybrid knowledge base.
@@ -71,6 +74,8 @@ class HybridQuranKnowledgeBase:
             device: Computation device
             llm_func: LLM function for graph extraction
             llm_model_name: LLM model name
+            embedder: Loaded embedder to share with the vector index
+            quran_path: Corpus used for the vector index and graph ingestion
         """
         self.vector_persist_dir = vector_persist_dir
         self.graph_working_dir = graph_working_dir
@@ -84,6 +89,8 @@ class HybridQuranKnowledgeBase:
 
         self._llm_func = llm_func
         self._llm_model_name = llm_model_name
+        self._embedder = embedder
+        self._quran_path = quran_path
         self._initialized = False
 
     async def initialize(self) -> None:
@@ -101,6 +108,8 @@ class HybridQuranKnowledgeBase:
             persist_dir=self.vector_persist_dir,
             embedding_model_name=self.embedding_model_name,
             device=self.device,
+            embedder=self._embedder,
+            quran_path=self._quran_path,
         )
 
         # Create embedding function for LightRAG
@@ -109,7 +118,7 @@ class HybridQuranKnowledgeBase:
             return embeddings.tolist()
 
         # Initialize graph KB (new)
-        embedding_dim = self._vector_kb.embedder.model.get_sentence_embedding_dimension()
+        embedding_dim = self._vector_kb.embedder.embedding_dimension()
         self._graph_kb = QuranLightRAG(
             working_dir=self.graph_working_dir,
             embedding_func=embedding_func,

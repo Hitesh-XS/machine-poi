@@ -82,13 +82,15 @@ def test_index_stores_references_and_queries_return_them(tmp_path, sample_embedd
     }
     with patch("machine_poi.knowledge_base.QuranEmbeddings") as factory:
         embedder = Mock(spec=QuranEmbeddings)
+        embedder.model_id = "fake-embedder"
+        embedder.embedding_dimension.return_value = sample_embedding_dim
         embedder.load_passages.side_effect = lambda path, chunk_by: passages[chunk_by]
         embedder.create_embeddings.side_effect = lambda texts, **kw: np.ones(
             (len(texts), sample_embedding_dim), dtype=np.float32
         )
         factory.return_value = embedder
         kb = QuranKnowledgeBase(persist_dir=str(tmp_path / "db"), device="cpu")
-        kb.build_index("unused.txt")
+        kb.build_index()
         stored = kb.collections["verse"].get(ids=["verse_2:3"])
         assert stored["metadatas"][0] == {
             "resolution": "verse", "index": 2, "surah": 2,

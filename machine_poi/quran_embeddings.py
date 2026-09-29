@@ -131,6 +131,18 @@ class QuranEmbeddings:
         self.tokenizer = None
         self._embeddings_cache = LRUCache(max_size=STEERING_DEFAULTS.max_embedding_cache_size)
 
+    @property
+    def model_id(self) -> str:
+        """Checkpoint identity recorded with vector indexes built by this embedder."""
+        path = self.SUPPORTED_MODELS.get(self.model_name, self.model_name)
+        return f"{path}@{self.revision}" if self.revision else path
+
+    def embedding_dimension(self) -> int:
+        """Output dimension of the loaded model, loading it if needed."""
+        if self.model is None:
+            self.load_model()
+        return int(self.model.get_sentence_embedding_dimension())
+
     def load_model(self) -> None:
         """Load the embedding model."""
         from sentence_transformers import SentenceTransformer
