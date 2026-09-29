@@ -47,9 +47,10 @@ as the original contrasting-prompt experiments.
 
 CAA constructs steering directions from positive/negative activation differences
 [2]. `ContrastiveQuranSteerer` pools examples at each layer, subtracts the two
-means, and normalizes the difference. Quran-versus-neutral contrasts can mix
-language, register, topic and behavior. Attributing an effect to a particular
-value requires controls that separate those factors.
+means, and normalizes the difference. The default negative set is neutral Modern
+Standard Arabic prose written for the project, so the contrast is not also
+Arabic-versus-English. It can still mix register, topic and behavior. Attributing
+an effect to a particular value requires controls that separate those factors.
 
 ### 2.3 Retrieval
 

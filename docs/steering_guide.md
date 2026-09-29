@@ -40,9 +40,16 @@ Use one preparation method for the experiment being measured.
 
 `ContrastiveQuranSteerer.prepare_contrastive_steering(positive_texts,
 negative_texts)` constructs normalized differences between activation means.
-`prepare_quran_contrastive()` supplies Quran/neutral-text examples. The contrast
-can mix language, style and content effects; it does not isolate moral behavior
-without appropriate controls.
+`prepare_quran_contrastive()` contrasts sampled verses with a language-matched
+control: up to 50 distinct sentences from `machine_poi/data/neutral_arabic.txt`,
+120 short Modern Standard Arabic sentences written for this project about weather,
+science, daily life and similar topics. `machine_poi.controls.neutral_texts("en")`
+returns the older ten-sentence English set for an explicit cross-language run.
+Repeated negatives are dropped before pooling, and cached vectors record a hash of
+both text sets. Matching the language removes the largest confound, but the
+contrast still mixes register (classical versus modern prose) and topic, so it
+does not isolate moral behavior. A native speaker has not yet reviewed the Arabic
+set.
 
 Generation wraps the prompt as one user turn in the tokenizer's chat template
 whenever the tokenizer has one, so pass plain text rather than templated text.

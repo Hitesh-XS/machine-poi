@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional, Dict, List, Union, Tuple, Literal, Any
 from dataclasses import asdict, dataclass
 
+from .controls import neutral_texts as neutral_control_texts, texts_sha256, unique_texts
 from .quran_embeddings import QuranEmbeddings, QuranFileError, resolve_corpus_path
 from .steering_vectors import SteeringVectorExtractor, ContrastiveSteeringExtractor
 from .llm_wrapper import SteeredLLM
@@ -1331,8 +1332,13 @@ class ContrastiveQuranSteerer(QuranSteerer):
         """
         if not positive_texts:
             raise ValueError("positive_texts cannot be empty")
-        if not negative_texts:
+        distinct = unique_texts(negative_texts)
+        if not distinct:
             raise ValueError("negative_texts cannot be empty")
+        if len(distinct) < len(negative_texts):
+            # Repeats would silently reweight the negative mean.
+            logger.info(f"Dropped {len(negative_texts) - len(distinct)} repeated negative texts")
+        negative_texts = distinct
             
         if self.llm is None:
             self.load_models(load_embedder=False)
@@ -1373,8 +1379,8 @@ class ContrastiveQuranSteerer(QuranSteerer):
         if cache_path:
             cache_path = Path(cache_path)
             self._save_vectors(cache_path, self._cache_metadata("contrastive",
-                positive_sha256=hashlib.sha256(repr(positive_texts).encode()).hexdigest(),
-                negative_sha256=hashlib.sha256(repr(negative_texts).encode()).hexdigest()))
+                positive_sha256=texts_sha256(positive_texts),
+                negative_sha256=texts_sha256(negative_texts)))
             logger.info(f"Saved contrastive vectors to {cache_path}")
         
         # Apply steering
@@ -1397,9 +1403,10 @@ class ContrastiveQuranSteerer(QuranSteerer):
         Convenience method: use Quran as positive and generate neutral texts as negative.
         
         Args:
-            neutral_texts: Optional list of neutral texts. If None, generates simple prompts.
+            neutral_texts: Neutral negatives; default is the Arabic control set
+                (machine_poi.controls), so the contrast is not Arabic vs English
             quran_sample_size: Number of Quran verses to sample
-            neutral_sample_size: Number of neutral texts to use
+            neutral_sample_size: Maximum number of distinct neutral texts to use
             
         Returns:
             Dictionary of contrastive steering vectors
@@ -1410,23 +1417,14 @@ class ContrastiveQuranSteerer(QuranSteerer):
         # Get Quran verses as positive examples
         quran_texts = self.embedder.load_quran_text(self.quran_path, chunk_by="verse")
         rng = np.random.RandomState(STEERING_DEFAULTS.random_seed)
-        positive_texts = list(rng.choice(quran_texts, size=min(quran_sample_size, len(quran_texts)), replace=False))
+        picks = rng.choice(len(quran_texts), size=min(quran_sample_size, len(quran_texts)), replace=False)
+        positive_texts = [quran_texts[i] for i in picks]
         
-        # Generate neutral texts if not provided
+        # Language-matched control: Arabic neutral prose, sampled without repeats
         if neutral_texts is None:
-            neutral_prompts = [
-                "The weather today is mild.",
-                "Numbers are mathematical concepts.",
-                "Water is composed of hydrogen and oxygen.",
-                "Computers process information.",
-                "Colors are perceived differently.",
-                "Sound travels through air.",
-                "Plants need sunlight to grow.",
-                "Time passes continuously.",
-                "Objects have mass and volume.",
-                "Languages have grammar rules.",
-            ]
-            # Repeat to get enough samples
-            neutral_texts = (neutral_prompts * (neutral_sample_size // len(neutral_prompts) + 1))[:neutral_sample_size]
-        
+            neutral_texts = neutral_control_texts("ar")
+            if len(neutral_texts) > neutral_sample_size:
+                picks = rng.choice(len(neutral_texts), size=neutral_sample_size, replace=False)
+                neutral_texts = [neutral_texts[i] for i in picks]
+
         return self.prepare_contrastive_steering(positive_texts, neutral_texts)
