@@ -10,6 +10,7 @@ from typing import List, Dict, Optional, Set, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 import numpy as np
 
+from .async_utils import run_sync
 from .themes import QURANIC_THEMES, embed_query, matching_keywords, theme_index
 
 if TYPE_CHECKING:
@@ -212,7 +213,4 @@ class GraphBridgeGenerator:
         max_bridges: int = 5,
     ) -> BridgeResult:
         """Synchronous wrapper for generate_bridges."""
-        import asyncio
-        return asyncio.get_event_loop().run_until_complete(
-            self.generate_bridges(query, max_bridges)
-        )
+        return run_sync(self.generate_bridges(query, max_bridges))

@@ -91,7 +91,7 @@ class TestQuranLightRAG:
         )
         
         with pytest.raises(ValueError, match="embedding_func must be provided"):
-            asyncio.get_event_loop().run_until_complete(rag.initialize())
+            asyncio.run(rag.initialize())
 
 
 # =============================================================================

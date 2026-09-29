@@ -277,6 +277,19 @@ def resolve_steering(args, config: ExperimentConfig):
     return steering, args.chunk_by or preset.chunk_by
 
 
+async def build_graph_index(steerer: QuranSteerer, quran_path: str) -> None:
+    """Initialize and build the graph index on one event loop.
+
+    LightRAG storages bind to the loop that initializes them, so separate
+    asyncio.run calls would build on objects tied to a closed loop.
+    """
+    await steerer.initialize_hybrid_knowledge_base()
+    try:
+        await steerer.hybrid_kb.build_index(quran_path, build_graph=True)
+    finally:
+        await steerer.hybrid_kb.finalize()
+
+
 def generation_options(args) -> dict:
     """Generation settings shared by every CLI mode."""
     return {
@@ -458,8 +471,7 @@ def main():
         steerer.knowledge_base.build_index(args.quran_path)
         if args.build_graph and args.graph_kb:
             print("Building LightRAG graph index (this may take a while)...")
-            asyncio.run(steerer.initialize_hybrid_knowledge_base())
-            asyncio.run(steerer.hybrid_kb.build_index(args.quran_path, build_graph=True))
+            asyncio.run(build_graph_index(steerer, args.quran_path))
             print("Graph index built successfully!")
         return
 

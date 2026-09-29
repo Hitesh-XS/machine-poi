@@ -176,7 +176,7 @@ def create_gemini_adapter(
         )
 
         # Run in executor since genai is sync
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None,
             lambda: model.generate_content(contents)
@@ -224,7 +224,7 @@ def create_local_llm_adapter(
         full_prompt += f"User: {prompt}\n\nAssistant:"
 
         # Run in executor to avoid blocking
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
             lambda: steered_llm.generate(

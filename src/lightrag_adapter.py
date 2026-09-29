@@ -6,7 +6,6 @@ for Quranic concepts, prophets, virtues, and commands.
 """
 
 import os
-import asyncio
 import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable
@@ -15,6 +14,8 @@ from dataclasses import dataclass
 
 from lightrag import LightRAG, QueryParam
 from lightrag.utils import EmbeddingFunc
+
+from .async_utils import run_sync
 
 logger = logging.getLogger("machine_poi.lightrag_adapter")
 
@@ -256,9 +257,7 @@ class QuranLightRAG:
         top_k: int = 5,
     ) -> Dict[str, Any]:
         """Synchronous query wrapper."""
-        return asyncio.get_event_loop().run_until_complete(
-            self.query(query, mode, top_k)
-        )
+        return run_sync(self.query(query, mode, top_k))
 
     def get_entity_neighbors_sync(
         self,
@@ -267,6 +266,4 @@ class QuranLightRAG:
         max_nodes: int = 20,
     ) -> Dict[str, Any]:
         """Synchronous neighbor lookup wrapper."""
-        return asyncio.get_event_loop().run_until_complete(
-            self.get_entity_neighbors(entity_name, max_depth, max_nodes)
-        )
+        return run_sync(self.get_entity_neighbors(entity_name, max_depth, max_nodes))

@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Any, Union, TYPE_CHECKING
 from pathlib import Path
 from dataclasses import dataclass
 
+from .async_utils import run_sync
 from .themes import matching_keywords
 
 if TYPE_CHECKING:
@@ -262,7 +263,4 @@ class HybridQuranKnowledgeBase:
         **kwargs,
     ) -> HybridQueryResult:
         """Synchronous query wrapper."""
-        import asyncio
-        return asyncio.get_event_loop().run_until_complete(
-            self.query(query, mode, **kwargs)
-        )
+        return run_sync(self.query(query, mode, **kwargs))
