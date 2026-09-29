@@ -204,6 +204,26 @@ class TestLLMAdapters:
         adapter = create_local_llm_adapter(mock_llm)
         assert callable(adapter)
 
+    def test_local_llm_adapter_extracts_without_steering(self):
+        """Graph extraction must not run through active steering hooks."""
+        import torch
+        from src.llm_adapters import create_local_llm_adapter
+        from src.llm_wrapper import ActivationHook, SteeredLLM
+
+        llm = SteeredLLM(device="cpu")
+        llm.hooks[0] = ActivationHook(0, torch.ones(2), 1.0)
+        seen = []
+
+        def generate(**kwargs):
+            seen.append(llm.hooks[0].enabled)
+            return "entities"
+
+        llm.generate = generate
+        adapter = create_local_llm_adapter(llm)
+        assert asyncio.run(adapter("Extract entities")) == "entities"
+        assert seen == [False]
+        assert llm.hooks[0].enabled
+
 
 # =============================================================================
 # Test Entity Extraction Prompts

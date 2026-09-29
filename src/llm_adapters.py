@@ -223,17 +223,18 @@ def create_local_llm_adapter(
 
         full_prompt += f"User: {prompt}\n\nAssistant:"
 
+        def complete():
+            # Extraction output becomes the shared knowledge graph; steered
+            # text would carry the intervention into every later retrieval.
+            with steered_llm.steering_disabled():
+                return steered_llm.generate(
+                    prompt=full_prompt,
+                    max_new_tokens=kwargs.get("max_tokens", 1024),
+                    temperature=kwargs.get("temperature", 0.7),
+                )
+
         # Run in executor to avoid blocking
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: steered_llm.generate(
-                prompt=full_prompt,
-                max_new_tokens=kwargs.get("max_tokens", 1024),
-                temperature=kwargs.get("temperature", 0.7),
-            )
-        )
-
-        return result
+        return await loop.run_in_executor(None, complete)
 
     return local_complete
