@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional, Dict, List, Union, Tuple, Literal, Any
 from dataclasses import asdict, dataclass
 
-from .quran_embeddings import QuranEmbeddings
+from .quran_embeddings import QuranEmbeddings, QuranFileError, resolve_corpus_path
 from .steering_vectors import SteeringVectorExtractor, ContrastiveSteeringExtractor
 from .llm_wrapper import SteeredLLM
 from .steering_cache import load_vectors, save_vectors
@@ -98,6 +98,12 @@ class SteeringConfig:
         
         if not 0.0 <= self.focus_layer <= 1.0:
             raise InvalidConfigError(f"Focus layer must be between 0.0 and 1.0, got {self.focus_layer}")
+
+
+def cited(item: Dict[str, Any]) -> str:
+    """Format a retrieved item as a bullet with its surah:ayah reference."""
+    ref = item.get("ref")
+    return f"- [{ref}] {item['content']}" if ref else f"- {item['content']}"
 
 
 def select_workspace_layers(num_layers: int) -> List[int]:
@@ -206,17 +212,10 @@ class QuranSteerer:
         self.trust_remote_code = trust_remote_code
         self.llm_model_name = llm_model
         self.embedding_model_name = embedding_model
-        self.quran_path = Path(quran_path)
-        
-        # Validate quran path exists
-        if not self.quran_path.exists():
-            # Try relative to module
-            module_dir = Path(__file__).parent.parent
-            alt_path = module_dir / "al-quran.txt"
-            if alt_path.exists():
-                self.quran_path = alt_path
-            else:
-                raise FileNotFoundError(f"Quran text file not found: {quran_path}")
+        try:
+            self.quran_path = resolve_corpus_path(quran_path)
+        except QuranFileError as exc:
+            raise FileNotFoundError(str(exc)) from exc
 
         if device is None:
             if torch.cuda.is_available():
@@ -530,7 +529,7 @@ class QuranSteerer:
             if result.vector_results:
                 verses = result.vector_results.get('verse', [])
                 if verses:
-                    verses_txt = "\n".join([f"- {r['content']}" for r in verses[:3]])
+                    verses_txt = "\n".join(cited(r) for r in verses[:3])
                     context_parts.append(f"**Relevant Verses**:\n{verses_txt}")
 
             # Bridges show the conceptual mapping
@@ -708,7 +707,8 @@ class QuranSteerer:
         actual_revision = getattr(getattr(model, "config", None), "_commit_hash", None)
         if isinstance(actual_revision, str):
             revision = actual_revision
-        return {"format": 1, "model": self.llm_model_name,
+        # Format 2: verse sampling keeps every verse (format 1 dropped short ones).
+        return {"format": 2, "model": self.llm_model_name,
                 "revision": revision or "unresolved",
                 "corpus_sha256": hashlib.sha256(self.quran_path.read_bytes()).hexdigest(),
                 "hidden_size": self.llm.hidden_size, "num_layers": self.llm.num_layers,
@@ -1108,9 +1108,9 @@ class QuranSteerer:
             )
 
         # 3. Construct MRA Prompt
-        verses_txt = "\n".join([f"- {r['content']}" for r in results['verse']])
-        passages_txt = "\n".join([f"- {r['content']}" for r in results['passage']])
-        surahs_txt = "\n".join([f"- {r['content']}" for r in results['surah']])
+        verses_txt = "\n".join(cited(r) for r in results['verse'])
+        passages_txt = "\n".join(cited(r) for r in results['passage'])
+        surahs_txt = "\n".join(cited(r) for r in results['surah'])
 
         verses_txt = quote_retrieval(verses_txt, "quran_db:verse")
         passages_txt = quote_retrieval(passages_txt, "quran_db:passage")

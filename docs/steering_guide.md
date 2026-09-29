@@ -68,9 +68,14 @@ answer = steerer.generate(
 print(answer)
 ```
 
-MRA retrieves verse, passage and surah context and adds it to the prompt. This
-path assembles its own prompt; check checkpoint formatting when designing an
-experiment. Retrieval-derived activation steering is a separate, explicit opt-in:
+MRA retrieves verse, passage and surah context and adds it to the prompt, each
+item prefixed with its reference, such as `[2:255]` or `[2:254-272]`. Passages are
+windows of up to 19 verses that never cross a surah boundary. The corpus file must
+hold exactly 6,236 lines, one verse per line in mushaf order; any other layout
+raises `CorpusError` rather than misnumbering verses. An explicit `--quran-path`
+that does not exist is an error; only the default `al-quran.txt` falls back to the
+checkout's copy. This path assembles its own prompt; check checkpoint formatting
+when designing an experiment. Retrieval-derived activation steering is a separate, explicit opt-in:
 
 ```python
 answer = steerer.generate(

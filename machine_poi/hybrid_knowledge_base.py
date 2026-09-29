@@ -157,12 +157,9 @@ class HybridQuranKnowledgeBase:
 
         if build_graph:
             logger.info("Building knowledge graph...")
-            # Load texts for graph ingestion
-            texts = self._vector_kb.embedder.load_quran_text(
-                quran_path,
-                chunk_by="verse"
-            )
-            await self._graph_kb.ingest_quran(texts)
+            # Prefix each verse with its reference so graph answers can cite it
+            verses = self._vector_kb.embedder.load_passages(quran_path, chunk_by="verse")
+            await self._graph_kb.ingest_quran([f"[{v.ref}] {v.text}" for v in verses])
 
     async def query(
         self,

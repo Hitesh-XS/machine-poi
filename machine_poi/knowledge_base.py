@@ -15,6 +15,7 @@ import chromadb
 from .quran_embeddings import QuranEmbeddings
 
 from .config import STEERING_DEFAULTS
+from .corpus import Passage
 
 # Setup logger
 logger = logging.getLogger("machine_poi.knowledge_base")
@@ -78,21 +79,18 @@ class QuranKnowledgeBase:
         """
         logger.info("Building Knowledge Base Index...")
         
-        # 1. Index Verses (Micro)
-        verses = self.embedder.load_quran_text(quran_path, chunk_by="verse")
-        self._index_collection("verse", verses, batch_size=STEERING_DEFAULTS.verse_index_batch_size)
-
-        # 2. Index Passages (Meso)
-        passages = self.embedder.load_quran_text(quran_path, chunk_by="paragraph")
-        self._index_collection("passage", passages, batch_size=STEERING_DEFAULTS.passage_index_batch_size)
-
-        # 3. Index Surahs (Macro)
-        surahs = self.embedder.load_quran_text(quran_path, chunk_by="surah")
-        self._index_collection("surah", surahs, batch_size=STEERING_DEFAULTS.surah_index_batch_size)
+        # Verses (micro), passages within a surah (meso) and whole surahs (macro)
+        for resolution, chunk_by, batch_size in (
+            ("verse", "verse", STEERING_DEFAULTS.verse_index_batch_size),
+            ("passage", "paragraph", STEERING_DEFAULTS.passage_index_batch_size),
+            ("surah", "surah", STEERING_DEFAULTS.surah_index_batch_size),
+        ):
+            passages = self.embedder.load_passages(quran_path, chunk_by=chunk_by)
+            self._index_collection(resolution, passages, batch_size=batch_size)
         
         logger.info("Indexing complete!")
 
-    def _index_collection(self, resolution: str, texts: List[str], batch_size: int) -> None:
+    def _index_collection(self, resolution: str, passages: List[Passage], batch_size: int) -> None:
         """Helper to index a specific resolution."""
         collection = self.collections[resolution]
         
@@ -101,25 +99,26 @@ class QuranKnowledgeBase:
             logger.info(f"Collection {resolution} already has {collection.count()} items. Skipping.")
             return
 
-        logger.info(f"Indexing {len(texts)} {resolution}s...")
-        
+        logger.info(f"Indexing {len(passages)} {resolution}s...")
+
         # Generate embeddings in batches
-        embeddings = self.embedder.create_embeddings(texts, batch_size=batch_size)
-        
-        # Add to Chroma
-        # We process addition in batches to avoid hitting message size limits
-        total = len(texts)
+        embeddings = self.embedder.create_embeddings(
+            [passage.text for passage in passages], batch_size=batch_size
+        )
+
+        # Add to Chroma in batches to avoid message size limits. IDs and
+        # metadata carry the surah:ayah reference for citation.
+        total = len(passages)
         for i in range(0, total, batch_size):
-            end = min(i + batch_size, total)
-            batch_texts = texts[i:end]
-            batch_embeddings = embeddings[i:end].tolist()
-            batch_ids = [f"{resolution}_{j}" for j in range(i, end)]
-            
+            batch = passages[i:i + batch_size]
             collection.add(
-                documents=batch_texts,
-                embeddings=batch_embeddings,
-                ids=batch_ids,
-                metadatas=[{"resolution": resolution, "index": j} for j in range(i, end)]
+                documents=[passage.text for passage in batch],
+                embeddings=embeddings[i:i + batch_size].tolist(),
+                ids=[f"{resolution}_{passage.ref}" for passage in batch],
+                metadatas=[
+                    passage.metadata(resolution, i + offset)
+                    for offset, passage in enumerate(batch)
+                ],
             )
 
     def query_multiresolution(
@@ -171,6 +170,7 @@ class QuranKnowledgeBase:
                 for doc, meta, dist, emb in zip(docs, metas, dists, embeds):
                     item = {
                         "content": doc,
+                        "ref": (meta or {}).get("ref"),
                         "metadata": meta,
                         "distance": dist,
                         "score": 1.0 - dist  # Cosine distance to similarity
@@ -218,7 +218,7 @@ class QuranKnowledgeBase:
 
             for res_name, items in results.items():
                 for item in items:
-                    doc_id = item["metadata"].get("index", item["content"][:50])
+                    doc_id = item.get("ref") or item["metadata"].get("index", item["content"][:50])
                     # Keep the highest scoring occurrence
                     if doc_id not in merged_results[res_name] or item["score"] > merged_results[res_name][doc_id]["score"]:
                         merged_results[res_name][doc_id] = item
