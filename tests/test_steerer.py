@@ -535,6 +535,8 @@ class TestGenerateAndCompare:
         steerer.llm.num_layers = sample_num_layers
         steerer.llm.generate.return_value = "Generated steered output"
         
+        from contextlib import nullcontext
+        steerer.llm.steering_session.side_effect = nullcontext
         # Context manager mock
         steerer.llm.steering_disabled = Mock()
         steerer.llm.steering_disabled.return_value.__enter__ = Mock()

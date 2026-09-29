@@ -19,6 +19,25 @@ Steer language model outputs using semantic embeddings derived from Quranic text
 ╚═══════════════════════════════════════════════════════════════════════╝
 ```
 
+## Guarded agent integration
+
+Machine-POI includes a reference host gateway for bounding agent tool actions:
+strict scopes, exact-action operator review, shared delegation budgets, replay
+protection, revocation, and redacted audit records. It runs without ML dependencies.
+
+```bash
+python -m examples.guarded_agent.host
+python -m examples.guarded_agent.process_demo
+python -m evals.rogue_agent.run
+```
+
+See [integration and deployment guidance](docs/guardian_integration.md) and the
+[implementation plan](docs/rogue_agent_containment_plan.md). The examples use mock
+tools; a real host must mediate every action and isolate credentials. Activation
+steering and transport geometry remain research signals and do not grant tool
+permissions. Retrieval-driven steering now requires an explicit trusted-corpus
+opt-in; see the migration notes in the integration guide.
+
 ## Overview
 
 Machine-POI uses text embeddings from Quran verses to create semantic steering vectors that influence LLM behavior without fine-tuning. The steering is applied at inference time by modifying intermediate layer activations.

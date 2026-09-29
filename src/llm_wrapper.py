@@ -7,6 +7,10 @@ during inference without modifying model weights.
 
 import gc
 import logging
+import math
+import re
+import threading
+from functools import wraps
 import torch
 import torch.nn as nn
 from typing import Optional, Dict, List, Union, Tuple, Any
@@ -131,6 +135,15 @@ def kv_share_source_map(
 
 
 
+def synchronized(method):
+    """Serialize all inference and hook mutation on one model instance."""
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._steering_lock:
+            return method(self, *args, **kwargs)
+    return wrapped
+
+
 class ActivationHook:
     """Hook to capture and optionally modify activations."""
 
@@ -141,6 +154,15 @@ class ActivationHook:
         coefficient: float = 1.0,
         injection_mode: str = "add",  # "add", "replace", "blend", "clamp"
     ):
+        if injection_mode not in {"add", "blend", "replace", "clamp"}:
+            raise ValueError("Unknown injection mode")
+        if not math.isfinite(coefficient):
+            raise ValueError("Steering coefficient must be finite")
+        if injection_mode == "blend" and not 0 <= coefficient <= 1:
+            raise ValueError("Blend coefficient must be in [0, 1]")
+        if steering_vector is not None:
+            if steering_vector.ndim != 1 or not torch.isfinite(steering_vector).all():
+                raise ValueError("Steering vector must be a finite 1D tensor")
         self.layer_idx = layer_idx
         self.steering_vector = steering_vector
         self.coefficient = coefficient
@@ -169,6 +191,8 @@ class ActivationHook:
         if not self.enabled or self.steering_vector is None:
             return output
 
+        if hidden_states.shape[-1] != self.steering_vector.shape[0]:
+            raise ValueError("Steering vector does not match hidden dimension")
         # Ensure steering vector is on same device and dtype
         steering = self.steering_vector.to(hidden_states.device, hidden_states.dtype)
 
@@ -205,8 +229,9 @@ class ActivationHook:
 
     def set_steering_vector(self, vector: torch.Tensor, coefficient: float = 1.0):
         """Update the steering vector."""
-        self.steering_vector = vector
-        self.coefficient = coefficient
+        validated = ActivationHook(self.layer_idx, vector, coefficient, self.injection_mode)
+        self.steering_vector = validated.steering_vector
+        self.coefficient = validated.coefficient
 
     def disable(self):
         """Disable steering (passthrough)."""
@@ -271,6 +296,8 @@ class SteeredLLM:
         load_in_8bit: bool = False,
         load_in_4bit: bool = False,
         torch_dtype: Optional[torch.dtype] = None,
+        revision: Optional[str] = None,
+        trust_remote_code: bool = False,
     ):
         """
         Initialize the steered LLM.
@@ -282,6 +309,12 @@ class SteeredLLM:
             load_in_4bit: Use 4-bit quantization
             torch_dtype: Data type (default: auto)
         """
+        if trust_remote_code and not re.fullmatch(r"[0-9a-fA-F]{40}", revision or ""):
+            raise ValueError("Remote code requires an explicitly pinned commit revision")
+        self.revision = revision
+        self.trust_remote_code = trust_remote_code
+        self._steering_lock = threading.RLock()
+        self._handles_by_layer = {}
         self.model_path = self.SUPPORTED_MODELS.get(model_name, model_name)
         self.model_name = model_name
         self.load_in_8bit = load_in_8bit
@@ -308,13 +341,15 @@ class SteeredLLM:
         self.hooks: Dict[int, ActivationHook] = {}
         self.hook_handles: List = []
 
+    @synchronized
     def load_model(self) -> None:
         """Load the model and tokenizer."""
         logger.info(f"Loading model: {self.model_path}")
 
         # Prepare loading arguments
         load_kwargs = {
-            "trust_remote_code": True,
+            "trust_remote_code": self.trust_remote_code,
+            "revision": self.revision,
             "dtype": self.torch_dtype,  # Was torch_dtype, deprecated
         }
 
@@ -336,7 +371,8 @@ class SteeredLLM:
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_path,
-            trust_remote_code=True,
+            trust_remote_code=self.trust_remote_code,
+            revision=self.revision,
         )
 
         if self.tokenizer.pad_token is None:
@@ -418,6 +454,7 @@ class SteeredLLM:
             f"Could not resolve layer {layer_idx}; tried paths: {candidates}"
         )
 
+    @synchronized
     def register_steering_hook(
         self,
         layer_idx: int,
@@ -441,6 +478,8 @@ class SteeredLLM:
             self.load_model()
 
         layer = self._get_layer_module(layer_idx)
+        if steering_vector is not None and steering_vector.shape != (self.hidden_size,):
+            raise ValueError("Steering vector does not match model hidden dimension")
         hook = ActivationHook(
             layer_idx=layer_idx,
             steering_vector=steering_vector,
@@ -448,12 +487,16 @@ class SteeredLLM:
             injection_mode=injection_mode,
         )
 
+        if layer_idx in self._handles_by_layer:
+            self._handles_by_layer.pop(layer_idx).remove()
         handle = layer.register_forward_hook(hook)
         self.hooks[layer_idx] = hook
-        self.hook_handles.append(handle)
+        self._handles_by_layer[layer_idx] = handle
+        self.hook_handles = list(self._handles_by_layer.values())
 
         return hook
 
+    @synchronized
     def set_steering(
         self,
         steering_vectors: Dict[int, torch.Tensor],
@@ -472,18 +515,22 @@ class SteeredLLM:
             else:
                 self.register_steering_hook(layer_idx, vector, coefficient)
 
+    @synchronized
     def clear_steering(self):
         """Remove all steering hooks."""
         for handle in self.hook_handles:
             handle.remove()
         self.hooks.clear()
         self.hook_handles.clear()
+        self._handles_by_layer.clear()
 
+    @synchronized
     def disable_steering(self):
         """Temporarily disable all steering."""
         for hook in self.hooks.values():
             hook.disable()
 
+    @synchronized
     def enable_steering(self):
         """Re-enable steering."""
         for hook in self.hooks.values():
@@ -491,12 +538,37 @@ class SteeredLLM:
 
     @contextmanager
     def steering_disabled(self):
-        """Context manager for temporarily disabling steering."""
-        self.disable_steering()
-        try:
-            yield
-        finally:
-            self.enable_steering()
+        """Restore the exact prior enabled state, including nested use."""
+        with self._steering_lock:
+            previous = [(hook, hook.enabled) for hook in self.hooks.values()]
+            self.disable_steering()
+            try:
+                yield
+            finally:
+                for hook, enabled in previous:
+                    hook.enabled = enabled
+
+    @contextmanager
+    def steering_session(self):
+        """Temporarily mutate steering, restore on failure, serialize callers.
+
+        This synchronous scope must never span an await. Async callers retrieve
+        data first, then run the complete inference section inside this scope.
+        Direct model access bypasses this contract.
+        """
+        with self._steering_lock:
+            previous = [
+                (i, h.steering_vector.detach().clone() if h.steering_vector is not None else None,
+                 h.coefficient, h.injection_mode, h.enabled)
+                for i, h in self.hooks.items()
+            ]
+            try:
+                yield
+            finally:
+                self.clear_steering()
+                for i, vector, coefficient, mode, enabled in previous:
+                    hook = self.register_steering_hook(i, vector, coefficient, mode)
+                    hook.enabled = enabled
 
     def get_activations(self, layer_idx: int) -> Optional[torch.Tensor]:
         """Get captured activations from a layer."""
@@ -504,6 +576,7 @@ class SteeredLLM:
             return self.hooks[layer_idx].captured_activation
         return None
 
+    @synchronized
     def get_steering_diagnostics(self) -> Dict[int, Any]:
         """
         Return workspace-inspired diagnostics for enabled steering hooks.
@@ -520,6 +593,7 @@ class SteeredLLM:
         }
         return summarize_steering_hooks(enabled_hooks)
 
+    @synchronized
     def get_attention_transport_diagnostics(
         self,
         prompt: str,
@@ -580,36 +654,36 @@ class SteeredLLM:
         hooked_layers = []
         v_source: Dict[int, int] = {}   # measured layer -> layer whose v_proj it uses
         v_hooked: Dict[int, bool] = {}  # v_proj hooks already registered, by source layer
-        for layer_idx in layer_indices:
-            attn = _attn_module(layer_idx)
-            q_proj = getattr(attn, "q_proj", None)
-            v_proj = getattr(attn, "v_proj", None)
-            source_idx = layer_idx
-            if v_proj is None:
-                # Cross-layer KV sharing: use the value projections of the
-                # layer whose KV states this layer attends over.
-                source_idx = share_sources.get(layer_idx)
-                v_proj = getattr(_attn_module(source_idx), "v_proj", None) \
-                    if source_idx is not None else None
-            if q_proj is None or v_proj is None:
-                logger.warning(
-                    f"Layer {layer_idx}: could not resolve q_proj/v_proj, "
-                    "either directly or through a KV-share source layer; "
-                    "skipping transport diagnostics for this layer"
-                )
-                continue
-            handles.append(q_proj.register_forward_hook(_capture(captured_q, layer_idx)))
-            if source_idx not in v_hooked:
-                handles.append(v_proj.register_forward_hook(_capture(captured_v, source_idx)))
-                v_hooked[source_idx] = True
-            v_source[layer_idx] = source_idx
-            hooked_layers.append(layer_idx)
-
-        if not hooked_layers:
-            return {}
-
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         try:
+            for layer_idx in layer_indices:
+                attn = _attn_module(layer_idx)
+                q_proj = getattr(attn, "q_proj", None)
+                v_proj = getattr(attn, "v_proj", None)
+                source_idx = layer_idx
+                if v_proj is None:
+                    # Cross-layer KV sharing: use the value projections of the
+                    # layer whose KV states this layer attends over.
+                    source_idx = share_sources.get(layer_idx)
+                    v_proj = getattr(_attn_module(source_idx), "v_proj", None) \
+                        if source_idx is not None else None
+                if q_proj is None or v_proj is None:
+                    logger.warning(
+                        f"Layer {layer_idx}: could not resolve q_proj/v_proj, "
+                        "either directly or through a KV-share source layer; "
+                        "skipping transport diagnostics for this layer"
+                    )
+                    continue
+                handles.append(q_proj.register_forward_hook(_capture(captured_q, layer_idx)))
+                if source_idx not in v_hooked:
+                    handles.append(v_proj.register_forward_hook(_capture(captured_v, source_idx)))
+                    v_hooked[source_idx] = True
+                v_source[layer_idx] = source_idx
+                hooked_layers.append(layer_idx)
+
+            if not hooked_layers:
+                return {}
+
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
             with torch.no_grad():
                 outputs = self.model(**inputs, output_attentions=True)
         finally:
@@ -668,6 +742,7 @@ class SteeredLLM:
             )
         return diagnostics
 
+    @synchronized
     def generate(
         self,
         prompt: str,
@@ -789,6 +864,7 @@ class SteeredLLM:
         
         return output
 
+    @synchronized
     def compare_outputs(
         self,
         prompt: str,
@@ -810,6 +886,7 @@ class SteeredLLM:
 
         return steered, unsteered
 
+    @synchronized
     def extract_layer_activations(
         self,
         text: str,
@@ -837,23 +914,19 @@ class SteeredLLM:
 
         def make_hook(layer_idx):
             def hook(module, input, output):
-                captured[layer_idx] = output.detach().clone()
+                hidden = output[0] if isinstance(output, tuple) else output
+                captured[layer_idx] = hidden.detach().clone()
             return hook
 
-        for layer_idx in layers:
-            layer = self._get_layer_module(layer_idx)
-            handle = layer.register_forward_hook(make_hook(layer_idx))
-            handles.append(handle)
-
-        # Forward pass
-        inputs = self.tokenizer(text, return_tensors="pt")
-        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
-
-        with torch.no_grad():
-            self.model(**inputs)
-
-        # Clean up
-        for handle in handles:
-            handle.remove()
-
-        return captured
+        try:
+            for layer_idx in layers:
+                layer = self._get_layer_module(layer_idx)
+                handles.append(layer.register_forward_hook(make_hook(layer_idx)))
+            inputs = self.tokenizer(text, return_tensors="pt")
+            inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+            with self.steering_disabled(), torch.no_grad():
+                self.model(**inputs)
+            return captured
+        finally:
+            for handle in handles:
+                handle.remove()

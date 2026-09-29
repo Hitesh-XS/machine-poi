@@ -1,0 +1,156 @@
+# Integrating the guardian reference runtime
+
+## What runs now
+
+Machine-POI now includes a standard-library-only action gateway in `src/guardian/`.
+It checks structured proposals against host-issued grants, pauses actions for
+operator review, binds approvals to stored arguments and resolved tool scope,
+reserves budgets atomically, prevents replay, stops runs and descendants, and
+records redacted hash-chained audit events. It also offers shadow evaluation that
+never executes a tool.
+
+This is a reference implementation for a **single trusted host process and one
+async event loop**. It is not a network authentication service, OS sandbox,
+credential vault, distributed state store, or validated rogue-intent detector.
+The examples use mock tools only. No live system has been deployed or evaluated.
+
+## Run the examples
+
+From the repository root, with Python 3.10+:
+
+```bash
+python -m examples.guarded_agent.host
+python -m examples.guarded_agent.process_demo
+python -m evals.rogue_agent.run --output /tmp/rogue_agent_results.json
+```
+
+The first example simulates an authorized write, operator approval of an internal
+send, and denial of an external send. The process example sends JSON proposals
+from a fixed worker script to a host that owns the executor. The worker receives
+no gateway object or operator API. It demonstrates an interface boundary; the
+processes still share the OS account and are not a hardened sandbox.
+
+The fixture runner measures policy enforcement **after an action proposal has
+been produced**. The text in a fixture does not get passed through an LLM. The
+report must not be interpreted as a prompt-injection success rate or evidence
+that steering detects rogue agents. Live model and steering A/B tests require
+real host traces and separate held-out tasks.
+
+## Host integration contract
+
+1. Authenticate the user/operator and agent channel outside this library. The
+   `operator` and `caller` arguments are trusted transport context, never fields
+   copied from an agent JSON request. Only expose `submit` to an agent. Use
+   `preview` for explicit shadow inspection; it never permits execution.
+2. Keep the `Gateway`, `issue`, `approve`, `pending`, `observe`, `stop`, tool
+   registry, and credentials in a separately permissioned host service. Never
+   execute untrusted Python/plugins in this process. Do not give the agent direct
+   credentials, filesystem/network paths to protected services, or a generic
+   tool that can bypass mediation.
+3. Implement a `ToolSpec` for every action surface. Its strict argument schema
+   rejects unknown fields and type confusion. Its trusted `describe` method
+   derives resources, destinations, data classes, cost/token upper bounds and
+   review needs from the **actual arguments**. It must not read a model's claimed
+   risk level. Resolve aliases, symlinks, URL redirects, recipients and tenant
+   ownership correctly; use handles or service-side preconditions to avoid a
+   target changing between resolution and execution. Nested tool calls and
+   delegated model calls must pass through the gateway as well.
+4. The async executor must use only the supplied validated arguments, enforce
+   declared token/cost limits in the underlying service, and call
+   `context.checkpoint()` immediately before each side effect. It must propagate
+   cancellation. Blocking work, subprocesses and external remote jobs need
+   their own enforceable deadlines, revocation and cancellation adapters.
+5. Issue a frozen `TaskGrant` with exact allowed identifiers. Empty scope sets
+   authorize nothing. Child grants can narrow scope and share the ancestor's
+   aggregate budgets. Action, cost and token reservations are conservative and
+   are not refunded after uncertain failures. The grant expiry supplies a time
+   bound; host rate limits also protect the input channel and audit service.
+6. On REVIEW, show the operator `pending.action.arguments`, `pending.scope` resolved by
+   the trusted tool adapter, recipient/resource, reason, and expiry. Approval
+   calls `approve(operator, run_id, pending.action_hash)`; that method executes
+   the stored action once after checking scope again. Do not accept a fresh
+   action body along with an approval. Rejection uses `stop` and a fresh task
+   grant if a narrower retry is later authorized. A policy denial also stops the
+   run. Changes to task intent require an operator-issued new run.
+7. Supply a synchronous, bounded `on_stop(run_id)` callback that revokes scoped
+   credentials and alerts the operator through the host's existing incident
+   system. Logical stopping happens first and remains effective if that callback
+   fails. A callback failure marks the gateway unavailable, stops all local runs,
+   and cancels their tasks; an explicit `stop` reports the failure to the host.
+   The incident owner must reconcile credential revocation. Integrate an independent kill switch
+   for process, network and remote job control.
+8. Persist the audit sink to host-only storage. Events exclude arguments, tool
+   results, model text and raw exceptions. The hash chain detects ordinary edits
+   against a known chain, not malicious rewriting/truncation by the storage
+   owner; externally anchor receipts or use an append-only service for stronger
+   integrity. The in-memory audit keeps all records for the process lifetime;
+   production needs a bounded streaming sink with retention/access controls.
+
+## State and failure semantics
+
+| Event | Result |
+| --- | --- |
+| Unknown/missing grant or wrong authenticated caller | Deny; do not grant access or stop another principal's run |
+| Bad schema, forbidden tool/resource/destination/data class, or replay | Block and stop that run and its descendants |
+| Sensitive action within scope | Pause; execute only after bound host review |
+| Grant/approval expiry, exhausted budget, policy outage | Block and stop |
+| Audit append fails before dispatch | Stop; no tool execution |
+| Tool failure, timeout, cancellation, or outcome audit failure | Stop; return interrupted/uncertain status, never retry automatically |
+| Explicit kill switch | Mark stopped, cancel queued/in-flight tasks cooperatively, revoke descendants, invoke host callback |
+| Restart | No automatic grant or approval restoration; issue fresh unique run IDs and reconcile uncertain effects |
+
+No library can reverse an external action that already committed. Cancellation
+can race with remote completion or be ignored by a faulty adapter. Treat such
+outcomes as uncertain and use service-side idempotency, transaction receipts,
+credential revocation and reconciliation. The gateway's in-process lock does not
+coordinate multiple replicas. Use a transactional shared authorization/budget/
+replay store before scaling out. The same audit path must have one writer.
+
+## Steering changes and migration
+
+- One model serializes inference and hook mutation through an RLock. High-level
+  temporary MRA/graph steering uses a synchronous session that restores the exact
+  prior hooks and enabled flags, even after errors. Async retrieval completes
+  before entering that session; no lock spans an await. Direct mutation of the
+  wrapped model bypasses this contract.
+- Repeated registration replaces the previous handle for that layer. Activation
+  extraction runs with steering disabled and releases temporary hooks on error.
+- Clamp now receives the effective coefficient explicitly. Its coefficient is a
+  **target projection on the unit vector**; zero removes the existing projection
+  and is not the same as disabling steering. Diagnostics compute the actual
+  change for add, blend, clamp and replace. Replace remains a research mode.
+- `QuranSteerer.last_run_diagnostics` retains scalar summaries of the last
+  completed run; temporary captured activations are cleared during restoration.
+- Retrieval is quoted, bounded reference data. Dynamic steering from retrieval
+  now defaults off. A trusted-corpus experiment must explicitly pass both
+  `use_dynamic_steering=True` and `trusted_retrieval=True`. Quoting is not an
+  injection detector; the tool gateway still enforces authority.
+- Model and embedding remote code defaults off. The Python APIs accept a
+  `revision`; remote code opt-in requires a full commit hash. The CLI exposes
+  `--revision` and `--trust-remote-code`. Review the model code and snapshot
+  before opt-in; a revision alone is not a safety review.
+- Steering caches now contain numeric arrays plus JSON metadata for model,
+  revision, corpus hash and recipe. Old/mismatched caches are rejected and
+  recomputed when supported; object arrays are never loaded. Metadata prevents
+  accidental reuse, not deliberate forgery. Protect cache storage. Pin a model
+  revision for reproducible deployments; an unresolved local model revision is
+  recorded explicitly and is not cryptographic model authentication.
+
+## Rollout checklist for a specific host
+
+Complete a deployment profile before enabling real effects:
+
+| Field | Required evidence |
+| --- | --- |
+| Host/framework and owner | Named runtime and incident owner |
+| Complete action inventory | Every tool, nested call, credential and direct network path |
+| Adapter mapping | Canonical resource IDs, tenant/data classification, destinations, side effects and cost bounds |
+| Isolation | Different host/agent identities, deny direct tool access, restricted egress/filesystem |
+| Operator review | Authenticated reviewers, exact action display, approval expiry and rejection exercise |
+| Stop and recovery | Queued, in-flight and descendant cancellation drills; external reconciliation procedure |
+| State and audit | Crash/restart policy, replay store, single writer or transactional coordination, retention |
+| Evaluation | Held-out benign/adversarial tasks, task completion, false blocks, review burden, latency and containment time |
+| Promotion | Shadow observations reviewed by owner, scoped canary enforcement, rollback and incident criteria |
+
+No values for these fields are assumed in this repository. Slice 5 remains a
+deployment task until a real host and its permitted tools are supplied.

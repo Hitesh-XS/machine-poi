@@ -1,16 +1,37 @@
 # Machine-POI: plan for containing out-of-scope agent actions
 
-Status: proposed architecture. Static review of main at commit 7cfa46657acacb8cbb5cb70e673e0cb3c30b1f9b (2026-09-29). This document does not claim that Machine-POI already protects an agent.
+Status: reference runtime implemented, with live-host validation and rollout pending (2026-09-29). The findings below describe the reviewed baseline at commit 7cfa46657acacb8cbb5cb70e673e0cb3c30b1f9b; their line numbers refer to that commit. See [integration and migration instructions](guardian_integration.md) for the implemented API and deployment requirements.
+
+## Execution status
+
+| Slice | Delivered | Remaining acceptance work |
+| --- | --- | --- |
+| 0. Boundary and threat model | Mock write/send tools; JSON proposal worker; host-owned grants, identities and executors in `examples/guarded_agent/`. | Inventory and isolate a real host. The process demo shares an OS account and is not a sandbox. |
+| 1. Research runtime | Serialized inference and hook mutation, exact session restoration, duplicate-handle replacement, finite vector/config validation, corrected clamp strength and diagnostics, remote code off by default with pinned opt-in, numeric-only identity-checked caches, bounded quoted retrieval with dynamic steering opt-in. | Live model regression and steering efficacy studies; no protection claim from steering. |
+| 2. Deterministic gateway | Standard-library `src/guardian/` contracts, trusted adapter scopes, exact policy checks, shared ancestor budgets, replay prevention, dispatch-time revalidation and redacted hash-chained audit. | Authenticated transport, durable/shared authorization state, credential and OS enforcement belong to the deployment. |
+| 3. Pause, stop and review | Bound pending actions, operator-only review, approval expiry, queued/in-flight cooperative cancellation, descendant revocation and fail-closed host callback handling. | Real credential revocation and remote-effect reconciliation drills. |
+| 4. Adversarial evaluation | Gateway/runtime regression tests, mock process demo, 12 synthetic action-proposal fixtures and a reproducible report in `evals/rogue_agent/results.json`; CI workflow added. | Held-out model-generated traces, baseline/steering/gateway/combined A/B runs, production task success and containment-time measurements. |
+| 5. Shadow and staged enforcement | Non-executing preview API and deployment profile checklist. | A named host, tools, owner and isolation profile are needed before shadow/canary rollout. |
+
+The fixture report tests actions that have already been proposed. It does not run fixture text through a model, measure injection resistance, or establish general safety. All side effects in the demos and tests are local mocks.
+
+Local validation on Python 3.12.14: **197 tests passed, 4 slow/integration tests deselected**, with one existing event-loop deprecation warning. The guardian subset contains 29 tests; runtime safety adds 17 regression cases. Both mock demos pass. The fixture runner reports **12/12 passed, 9 forbidden actions blocked, zero unapproved mock side effects, zero false blocks in 3 benign cases, and 1 review request**. No model weights or external service credentials were used. Reproduce the full offline test run with:
+
+```bash
+python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+python -m pip install -r requirements-test.txt
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -m pytest -q -m 'not slow and not integration'
+```
 
 ## Goal and trust boundary
 
 Define a "rogue" event by observable behavior: an agent attempts an action beyond the approved task, follows instructions in lower-trust content, uses an unauthorized tool or identity, leaks protected data, persists after revocation, or enters an uncontrolled action loop. Intent need not be inferred to stop an action.
 
-Machine-POI is presently an activation-steering and Quranic retrieval research library. It has no agent loop, tool executor, credential broker, approval service, or production audit trail. Make it an optional companion for an external agent host. The host owns execution and the approved task; Machine-POI supplies a policy gateway and optional research telemetry. Protection applies only when every action-capable tool is forced through the gateway and direct access to tools and credentials is removed.
+At the reviewed baseline, Machine-POI was an activation-steering and Quranic retrieval research library without an agent loop or tool authorization boundary. The new gateway is an optional companion for an external agent host. The host owns execution and the approved task; Machine-POI supplies a policy gateway and optional research telemetry. Protection applies only when every action-capable tool is forced through the gateway and direct access to tools and credentials is removed. A credential broker, authenticated approval service and production audit infrastructure still require host integration.
 
 **Invariant:** model output, a hidden-state metric, retrieved content, and a second model's verdict never grant authority. Only an authenticated principal can create or amend a bounded task grant. Code outside the agent's control enforces that grant before side effects.
 
-## Findings in the current tree
+## Findings at the reviewed baseline
 
 | Evidence | Consequence | Priority |
 | --- | --- | --- |
@@ -62,10 +83,10 @@ Treat web pages, documents, graph answers, tool responses and inter-agent messag
 | 4. Adversarial evaluation | Add tests/guardian and evals/rogue_agent fixtures for poisoned retrieval/graph output, tool spoofing, memory poison, multilingual injection, exfiltration, forged approval, scope escalation, loops, retries and cross-run contamination. Compare baseline, steering-only, gateway-only and combined variants, including benign cases. | All specified deterministic violations are blocked in fixtures; no unapproved side effect in replay. Report false blocks, review load, latency, time to containment and task success on a held-out set. Do not report a universal safety percentage. |
 | 5. Shadow and staged enforcement | Instrument a real host after its tool inventory is complete. Observe decisions, tune on authorized workflows, then stage policy enforcement and approvals. Version policy and prepare incident response. | Deployment profile names covered paths, residual bypasses, owner, alert recipient, response drill and measured operating thresholds. Pass bypass and kill-switch drills for each scoped environment. |
 
-**Recommended first implementation PR:** slice 1 and the mock integration boundary in slice 0. Slice 2 gives the first enforceable action invariant. Building a "rogue classifier" or stronger moral steering vector is not the first safety milestone.
+**Next implementation milestone:** choose a host and complete its deployment profile, then implement scoped adapters and run bypass/kill-switch drills before staged enforcement. The reference runtime supplies the gateway invariant for mediated actions; it cannot prevent a host from exposing a direct execution path.
 
 ## Evidence and limitations
 
-This is a static code review and reading of committed experiment reports. No model weights were downloaded and no agent deployment was tested. The Gemma runs cited above have small samples; the SmolLM2 result differs. Gateway, approval, isolation and containment are proposed components, not current features.
+The original findings came from static review and committed experiment reports. Implementation was checked with mocked runtime/gateway tests, deterministic action fixtures and a mock process boundary. No model weights were downloaded and no live agent deployment was tested. The Gemma runs cited above have small samples; the SmolLM2 result differs. Gateway and approval controls are now implemented for a single trusted host process; OS isolation, durable multi-host state, real credential revocation and live evaluation remain deployment work. See the integration guide for exact failure and recovery semantics.
 
 Design references: [OWASP Top 10 for Agentic Applications 2026](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/), [OWASP Agent Control Standard](https://genai.owasp.org/resource/agent-control-standard-acs/), [NIST AI RMF Generative AI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence), and [OpenAI agent guardrails and approvals guidance](https://developers.openai.com/api/docs/guides/agents/guardrails-approvals). These sources inform the design; this plan does not assert certification or conformance.
