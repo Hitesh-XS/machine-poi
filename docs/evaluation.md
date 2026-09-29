@@ -60,7 +60,7 @@ prompt from the earlier experiments.
 | Metric | Definition | Caveats |
 | --- | --- | --- |
 | Arabic-script outputs | Share of outputs whose letters are mostly Arabic script, by prompt language and for English neutral prompts | Counts script, not language |
-| Degenerate outputs | Fewer than 5 words, or distinct-2 below 0.5 | Thresholds are heuristics for loops and empty answers |
+| Degenerate outputs | Fewer than 5 words, distinct-2 below 0.5, or a 1–4 character unit containing a letter or combining mark repeated 8+ times in a row | A lower bound: catches loops and empty answers, not gibberish without a loop |
 | Distinct-2 | Unique word bigrams over all bigrams | Longer fluent text scores lower |
 | ΔNLL | Mean token negative log-likelihood of the output under the unsteered model, given the same final prompt, minus the baseline's | Rises for any departure from the model's own style, not only for errors |
 | ARC-Easy accuracy | Zero-shot multiple choice under the condition's hooks, scored by log-likelihood per character (lm-eval `acc_norm`) on a seeded sample of the test set | Items are not committed; the result records their IDs and the dataset revision |

@@ -43,6 +43,15 @@ def test_distinct_n_and_collapse_detection():
     assert degenerate("Too short.")
     assert not degenerate("Water boils at a lower temperature on high mountains.")
     assert degenerate("I am here. " * 10)
+    # Collapse inside one "word" after a fluent start (seen in the dev pilot)
+    assert degenerate("race condition was what we mean as yeen" + "θ" * 40)
+    assert degenerate("Be a better neighbor by " + "or" * 30)
+    assert degenerate("ثذار إاسقیا لثاس كظه هذا " + "\u06e8" * 12)  # combining marks
+    table = (
+        "| Particle | Count |\n| ---------- | ---------- |\n"
+        "| alpha decay events | 1000000000 |\n| beta decay events | 2000000000 |"
+    )
+    assert not degenerate(table)  # rules and digits are not loops
 
 
 def test_summaries_and_paired_differences():

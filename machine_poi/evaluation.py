@@ -13,6 +13,7 @@ contrasts can confound.
 
 import math
 import re
+import unicodedata
 from typing import Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
@@ -26,6 +27,7 @@ ARABIC_LETTER = re.compile(
 LATIN_LETTER = re.compile("[A-Za-zÀ-ɏ]")
 ARABIC_MARKS = re.compile("[ً-ٰٟـ]")  # diacritics and tatweel
 WORD = re.compile(r"[^\W_]+")
+REPEATED_UNIT = re.compile(r"(.{1,4}?)\1{7,}", re.DOTALL)
 
 
 def script_counts(text: str) -> Dict[str, int]:
@@ -62,15 +64,29 @@ def distinct_n(tokens: Sequence[str], n: int) -> float:
     return len(set(grams)) / len(grams) if grams else float("nan")
 
 
+def character_loop(text: str) -> bool:
+    """A 1-4 character unit with a letter or mark, repeated 8+ times in a row.
+
+    Catches collapse inside a single "word" ("ororororor", "θθθθθθθθ", a run
+    of Arabic combining marks), which word n-grams miss; runs of punctuation
+    or digits such as markdown rules do not count.
+    """
+    return any(
+        any(unicodedata.category(char)[0] in "LM" for char in match.group(1))
+        for match in REPEATED_UNIT.finditer(text)
+    )
+
+
 def degenerate(text: str, min_words: int = 5, min_distinct_2: float = 0.5) -> bool:
-    """Collapse detector: fewer than ``min_words`` words, or mostly repeated bigrams.
+    """Collapse detector: too few words, mostly repeated bigrams, or a character loop.
 
     With greedy decoding of 60 or more tokens, fluent output stays well above
-    both thresholds; loops such as "the the the" or a repeated phrase fall
-    below the distinct-2 threshold.
+    the word thresholds; loops such as "the the the" or a repeated phrase fall
+    below the distinct-2 threshold. It is a lower bound: gibberish without a
+    loop passes, which the NLL metric reflects instead.
     """
     tokens = words(text)
-    if len(tokens) < min_words:
+    if len(tokens) < min_words or character_loop(text):
         return True
     return distinct_n(tokens, 2) < min_distinct_2
 
