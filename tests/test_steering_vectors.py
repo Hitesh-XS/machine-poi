@@ -6,10 +6,7 @@ Tests for:
 - ContrastiveSteeringExtractor (CAA-style vectors)
 """
 
-import pytest
-import numpy as np
 import torch
-from pathlib import Path
 
 
 class TestSteeringVectorExtractorInit:

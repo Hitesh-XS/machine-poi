@@ -38,6 +38,22 @@ fixtures/mocks and run with model-hub downloads disabled. The test requirements
 are not a complete transitive dependency lock or the full optional-service
 installation in `requirements.txt`.
 
+## Lint
+
+CI runs ruff at the version pinned in `requirements-test.txt`. `ruff.toml` selects
+pyflakes and syntax-level pycodestyle rules explicitly, because ruff's default
+selection varies by version:
+
+```bash
+python -m pip install "$(grep -E '^ruff==' requirements-test.txt)"
+ruff check .
+```
+
+`pytest.ini` also turns deprecation warnings raised from this repository's own
+modules into test errors.
+
+## Targeted runs
+
 For a targeted run, use the same environment and select a test file:
 
 ```bash

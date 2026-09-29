@@ -6,8 +6,11 @@ using the existing SteeredLLM infrastructure.
 """
 
 import logging
-from typing import Optional, Dict, Any, List
+from typing import TYPE_CHECKING, Optional, Dict, List
 import asyncio
+
+if TYPE_CHECKING:
+    from .llm_wrapper import SteeredLLM
 
 logger = logging.getLogger("machine_poi.llm_adapters")
 

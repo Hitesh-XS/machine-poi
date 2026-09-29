@@ -9,8 +9,9 @@ Tests for:
 
 import pytest
 import numpy as np
-from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
+
+from src.quran_embeddings import QuranEmbeddings
 
 
 class TestQuranKnowledgeBaseInit:
@@ -34,7 +35,7 @@ class TestQuranKnowledgeBaseInit:
         from src.knowledge_base import QuranKnowledgeBase
         
         with patch("src.knowledge_base.QuranEmbeddings") as MockEmbeddings:
-            mock_embedder = Mock()
+            mock_embedder = Mock(spec=QuranEmbeddings)
             mock_embedder.load_model = Mock()
             MockEmbeddings.return_value = mock_embedder
             
@@ -58,7 +59,7 @@ class TestIndexBuilding:
         
         with patch("src.knowledge_base.QuranEmbeddings") as MockEmbeddings:
             # Mock embedder
-            mock_embedder = Mock()
+            mock_embedder = Mock(spec=QuranEmbeddings)
             mock_embedder.load_model = Mock()
             mock_embedder.load_quran_text.return_value = [
                 "verse 1", "verse 2", "verse 3", "verse 4", "verse 5"
@@ -84,7 +85,7 @@ class TestIndexBuilding:
         chunk_types = [c.kwargs.get("chunk_by", c.args[1] if len(c.args) > 1 else None) for c in calls]
         
         # Verify all resolutions were processed
-        assert mock_kb.embedder.load_quran_text.call_count >= 3
+        assert set(chunk_types) == {"verse", "paragraph", "surah"}
 
     def test_build_index_populates_collections(self, mock_kb, sample_quran_path):
         """Test that collections are populated after indexing."""
@@ -105,7 +106,7 @@ class TestQuerying:
         
         with patch("src.knowledge_base.QuranEmbeddings") as MockEmbeddings:
             # Mock embedder
-            mock_embedder = Mock()
+            mock_embedder = Mock(spec=QuranEmbeddings)
             mock_embedder.load_model = Mock()
             
             # Return different texts for different chunk types
@@ -218,7 +219,7 @@ class TestCollectionManagement:
         from src.knowledge_base import QuranKnowledgeBase
         
         with patch("src.knowledge_base.QuranEmbeddings") as MockEmbeddings:
-            mock_embedder = Mock()
+            mock_embedder = Mock(spec=QuranEmbeddings)
             mock_embedder.load_model = Mock()
             MockEmbeddings.return_value = mock_embedder
             
@@ -242,7 +243,7 @@ class TestScoreComputation:
         from src.knowledge_base import QuranKnowledgeBase
         
         with patch("src.knowledge_base.QuranEmbeddings") as MockEmbeddings:
-            mock_embedder = Mock()
+            mock_embedder = Mock(spec=QuranEmbeddings)
             mock_embedder.load_model = Mock()
             mock_embedder.create_embeddings.return_value = np.random.randn(
                 1, sample_embedding_dim

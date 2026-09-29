@@ -23,7 +23,6 @@ Embedding Models:
 import argparse
 import torch
 import gc
-import sys
 import time
 from src import QuranSteerer
 from config import LLM_MODELS, EMBEDDING_MODELS
@@ -156,7 +155,6 @@ def list_models():
 def compare_embeddings(args):
     """Compare embedding models on query-to-Quran retrieval."""
     from src.quran_embeddings import QuranEmbeddings
-    from src.knowledge_base import QuranKnowledgeBase
     import numpy as np
 
     print(f"\n{'='*70}")
@@ -223,7 +221,7 @@ def compare_embeddings(args):
 
                 print(f"\n  Query: '{query}'")
                 print(f"  Query embedding time: {query_time*1000:.1f}ms")
-                print(f"  Top 3 matches:")
+                print("  Top 3 matches:")
                 for i, idx in enumerate(top_indices):
                     score = similarities[idx]
                     text = chunks[idx][:80] + "..." if len(chunks[idx]) > 80 else chunks[idx]
@@ -312,7 +310,7 @@ def main():
             print(f"  Temperature: {config.get('temperature', 0.6)}")
             print(f"  Top-P: {config.get('top_p', 0.95)}")
         elif args.reasoning:
-            print(f"  Reasoning: generic (step-by-step)")
+            print("  Reasoning: generic (step-by-step)")
         
         print(f"{'='*60}")
         

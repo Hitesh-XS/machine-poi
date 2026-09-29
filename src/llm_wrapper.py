@@ -5,7 +5,6 @@ Provides hooks into transformer layers to enable activation steering
 during inference without modifying model weights.
 """
 
-import gc
 import logging
 import math
 import re

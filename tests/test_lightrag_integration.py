@@ -5,8 +5,7 @@ Tests for LightRAG Knowledge Graph Integration
 import pytest
 import asyncio
 import numpy as np
-from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch, AsyncMock
+from unittest.mock import Mock, MagicMock, AsyncMock
 
 
 # =============================================================================
@@ -198,7 +197,9 @@ class TestLLMAdapters:
         """Test local LLM adapter can be created."""
         from src.llm_adapters import create_local_llm_adapter
         
-        mock_llm = MagicMock()
+        from src.llm_wrapper import SteeredLLM
+
+        mock_llm = MagicMock(spec=SteeredLLM)
         mock_llm.generate = MagicMock(return_value="Generated text")
         
         adapter = create_local_llm_adapter(mock_llm)

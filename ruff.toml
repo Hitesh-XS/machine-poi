@@ -1,0 +1,11 @@
+# Correctness-focused lint: pyflakes plus syntax-level pycodestyle checks.
+# The rule set is explicit because ruff's default selection varies by version.
+target-version = "py310"
+line-length = 100
+
+[lint]
+select = ["E4", "E7", "E9", "F"]
+
+[lint.per-file-ignores]
+# Standalone reference script written in a deliberately compact style.
+"experiments/gpt_on_manifolds_v4.py" = ["E701", "E702", "E741"]

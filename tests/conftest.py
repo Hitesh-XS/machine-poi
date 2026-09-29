@@ -10,11 +10,8 @@ Provides shared fixtures for:
 import pytest
 import numpy as np
 import torch
-import tempfile
-import os
 from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
-from typing import Dict, List
+from unittest.mock import Mock, MagicMock
 
 
 # =============================================================================
@@ -155,7 +152,6 @@ def mock_llm_model(sample_hidden_dim, sample_num_layers):
     mock_model.config.num_hidden_layers = sample_num_layers
     
     # Model layers (for hook registration)
-    mock_layers = MagicMock()
     mock_model.model.layers = [MagicMock() for _ in range(sample_num_layers)]
     
     # Generate method

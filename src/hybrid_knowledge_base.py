@@ -6,7 +6,7 @@ for comprehensive Quranic knowledge access.
 """
 
 import logging
-from typing import Dict, List, Optional, Any, Union, TYPE_CHECKING
+from typing import Dict, List, Optional, Union, TYPE_CHECKING
 from pathlib import Path
 from dataclasses import dataclass
 

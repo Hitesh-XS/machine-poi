@@ -5,11 +5,9 @@ Provides entity-relationship extraction and graph-based retrieval
 for Quranic concepts, prophets, virtues, and commands.
 """
 
-import os
 import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable
-from functools import partial
 from dataclasses import dataclass
 
 from lightrag import LightRAG, QueryParam

@@ -13,11 +13,9 @@ import threading
 from functools import wraps
 import torch
 import numpy as np
-import os
 from pathlib import Path
 from typing import Optional, Dict, List, Union, Tuple, Literal, Any
 from dataclasses import dataclass
-from functools import lru_cache
 
 from .quran_embeddings import QuranEmbeddings
 from .steering_vectors import SteeringVectorExtractor, ContrastiveSteeringExtractor
@@ -25,8 +23,8 @@ from .llm_wrapper import SteeredLLM
 from .steering_cache import load_vectors, save_vectors
 from .retrieval_context import quote_retrieval
 from .knowledge_base import QuranKnowledgeBase
-from .hybrid_knowledge_base import HybridQuranKnowledgeBase, HybridQueryResult
-from .graph_bridge import GraphBridgeGenerator, BridgeResult
+from .hybrid_knowledge_base import HybridQuranKnowledgeBase
+from .graph_bridge import GraphBridgeGenerator
 from .themes import (
     DOMAIN_BRIDGE_MAP,
     QURANIC_THEMES,
@@ -41,7 +39,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import (
     STEERING_DEFAULTS,
     MultiResolutionResults,
-    RetrievalResult,
 )
 
 

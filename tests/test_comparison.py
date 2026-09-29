@@ -8,6 +8,7 @@ import pytest
 import torch
 
 import main
+from src.knowledge_base import QuranKnowledgeBase
 from src.llm_wrapper import SteeredLLM
 from src.steerer import QuranSteerer
 
@@ -55,14 +56,14 @@ def recording_steerer():
         calls.append({"prompt": prompt, "disabled": state["disabled"], **options})
         return "baseline" if state["disabled"] else "steered"
 
-    steerer.llm = Mock()
+    steerer.llm = Mock(spec=SteeredLLM)
     steerer.llm.steering_session.side_effect = nullcontext
     steerer.llm.steering_disabled.side_effect = disabled
     steerer.llm.generate.side_effect = generate
     steerer.llm.get_steering_diagnostics.side_effect = lambda: {
         "captured_while_disabled": state["disabled"]
     }
-    steerer.knowledge_base = Mock()
+    steerer.knowledge_base = Mock(spec=QuranKnowledgeBase)
     steerer.knowledge_base.query_multiresolution.return_value = {
         "verse": [{"content": "retrieved verse"}],
         "passage": [],

@@ -962,7 +962,7 @@ fisher_history = []
 control_sample = docs[:min(CONTROL_DOCS, len(docs))]
 
 print(f"\n{'='*72}")
-print(f"  CONTROL (a): random/frozen baseline at initialization (§4.3)")
+print("  CONTROL (a): random/frozen baseline at initialization (§4.3)")
 print(f"{'='*72}")
 frozen_baseline = diagnostic_pass(control_sample)
 print(f"  ρ(frozen)        = {frozen_baseline['rho']:.4f}")
@@ -970,8 +970,8 @@ print(f"  holonomy(frozen) = {frozen_baseline['mean_holonomy']:.4f} rad")
 
 print(f"\n{'='*72}")
 print(f"  TRAINING: Riemannian Gradient Flow on ({MANIFOLD_TYPE}) Manifold")
-print(f"  Discrete Cartan curvature: Ωₜ = (dω)ₜ + (ω∧ω)ₜ   (Eqs. 5-7)")
-print(f"  Non-abelian ratio: ρ = Σ‖ω∧ω‖ / (Σ‖dω‖ + Σ‖ω∧ω‖)   (Eq. 8)")
+print("  Discrete Cartan curvature: Ωₜ = (dω)ₜ + (ω∧ω)ₜ   (Eqs. 5-7)")
+print("  Non-abelian ratio: ρ = Σ‖ω∧ω‖ / (Σ‖dω‖ + Σ‖ω∧ω‖)   (Eq. 8)")
 print(f"{'='*72}\n")
 
 for step in range(num_steps):
@@ -1057,12 +1057,12 @@ for step in range(num_steps):
 
 print(f"\n{'='*72}")
 print(f"  IS ATTENTION COMMUTATIVE? — {MANIFOLD_TYPE.upper()} MANIFOLD")
-print(f"  Discrete Cartan diagnostic: Ωₜ = (dω)ₜ + (ω∧ω)ₜ")
+print("  Discrete Cartan diagnostic: Ωₜ = (dω)ₜ + (ω∧ω)ₜ")
 print(f"{'='*72}")
 
 if curv_history:
-    print(f"\n── Table 2: Curvature evolution during training ──")
-    print(f"  (dω)ₜ = ωₜ₊₁ − ωₜ    (ω∧ω)ₜ = [ωₜ, ωₜ₊₁]    (adjacent segments)")
+    print("\n── Table 2: Curvature evolution during training ──")
+    print("  (dω)ₜ = ωₜ₊₁ − ωₜ    (ω∧ω)ₜ = [ωₜ, ωₜ₊₁]    (adjacent segments)")
     print()
     print(f"  {'Step':>6}  {'K̄(sect)':>9}  {'‖dω‖':>9}  {'‖ω∧ω‖':>9}  {'Hol(rad)':>9}  {'ρ':>7}  {'Top μ':>9}")
     print(f"  {'─'*6}  {'─'*9}  {'─'*9}  {'─'*9}  {'─'*9}  {'─'*7}  {'─'*9}")
@@ -1078,17 +1078,17 @@ if curv_history:
     Ec_traj = sum(ch['Ec'] for ch in curv_history)
     rho_traj_energy = Ec_traj / (Ed_traj + Ec_traj + NA_EPS)
 
-    print(f"\n── Non-Abelian Ratio ρ (Eq. 8) ──")
+    print("\n── Non-Abelian Ratio ρ (Eq. 8) ──")
     print(f"  ρ (final step, energy-weighted)      = {rho_final:.4f}")
     print(f"  ρ (trajectory, mean-weighted)        = {rho_traj_mean:.4f}")
     print(f"  ρ (trajectory, energy-weighted)      = {rho_traj_energy:.4f}")
     print(f"  → {rho_traj_mean*100:.1f}% of learned curvature is attributable to")
-    print(f"    NON-COMMUTATIVITY of successive transport generators.")
+    print("    NON-COMMUTATIVITY of successive transport generators.")
     if rho_final < 0.01:
-        print(f"  Verdict: attention transport is NEARLY COMMUTATIVE here.")
+        print("  Verdict: attention transport is NEARLY COMMUTATIVE here.")
     else:
-        print(f"  Verdict: attention transport is MEASURABLY NON-COMMUTATIVE —")
-        print(f"  order of local transport steps materially changes the result.")
+        print("  Verdict: attention transport is MEASURABLY NON-COMMUTATIVE —")
+        print("  order of local transport steps materially changes the result.")
 
     c0, cN = curv_history[0]['mean_K'], curv_history[-1]['mean_K']
     h0, hN = curv_history[0]['mean_hol'], curv_history[-1]['mean_hol']
@@ -1100,8 +1100,8 @@ if curv_history:
     print(f"  Top rotation rate μ: {m0:.4f} → {mN:.4f}")
 
     # ── §6.4 Per-head taxonomy at convergence ──
-    print(f"\n── Per-Head Taxonomy at Convergence (§6.4) ──")
-    print(f"  flat: ‖Ω‖≈0 (copy/average) | commutative-varying: dω≫ω∧ω | order-sensitive: large ω∧ω")
+    print("\n── Per-Head Taxonomy at Convergence (§6.4) ──")
+    print("  flat: ‖Ω‖≈0 (copy/average) | commutative-varying: dω≫ω∧ω | order-sensitive: large ω∧ω")
     attn_conn.reset()
     _tax_doc = max(control_sample, key=len)
     _tokens = [BOS] + [alphabet.index(ch) for ch in _tax_doc] + [BOS]
@@ -1125,15 +1125,15 @@ if curv_history:
     attn_conn.reset()
 
 if fisher_history:
-    print(f"\n── Table 3: Diagonal empirical Fisher conditioning κ_diag (Eq. 10) ──")
+    print("\n── Table 3: Diagonal empirical Fisher conditioning κ_diag (Eq. 10) ──")
     print(f"  {'Step':>6}  {'κ_diag':>12}")
     print(f"  {'─'*6}  {'─'*12}")
     for fh in fisher_history:
         print(f"  {fh['step']:6d}  {fh['kappa']:12.2e}")
-    print(f"  (diagonal proxy only — not a full-Fisher condition number)")
+    print("  (diagonal proxy only — not a full-Fisher condition number)")
 
 if hess_history:
-    print(f"\n── Table 4: Negative-curvature probes (§5.4) ──")
+    print("\n── Table 4: Negative-curvature probes (§5.4) ──")
     print(f"  {'Step':>6}  {'λ_min':>12}  {'λ_max':>12}  {'Neg.':>4}  Interpretation")
     print(f"  {'─'*6}  {'─'*12}  {'─'*12}  {'─'*4}  {'─'*28}")
     prev_neg = 0
@@ -1152,7 +1152,7 @@ if hess_history:
         print(f"  {hh['step']:6d}  {min(probes):12.4e}  {max(probes):12.4e}  "
               f"{hh['neg']:4d}  {interp}")
     print(f"\n  {transitions} negative-curvature transitions across {num_steps} steps.")
-    print(f"  (probe-based evidence only — no exact Morse index claimed)")
+    print("  (probe-based evidence only — no exact Morse index claimed)")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1160,7 +1160,7 @@ if hess_history:
 # ═══════════════════════════════════════════════════════════════════════════
 
 print(f"\n{'='*72}")
-print(f"  CONTROLS (§4.3)")
+print("  CONTROLS (§4.3)")
 print(f"{'='*72}")
 
 trained_diag = diagnostic_pass(control_sample)
@@ -1180,18 +1180,18 @@ delta_destroy = trained_diag['rho'] - destroyed_diag['rho']
 print(f"\n  Δρ(trained − frozen)     = {delta_frozen:+.4f}")
 print(f"  Δρ(trained − destroyed)  = {delta_destroy:+.4f}")
 if delta_frozen > 0 and delta_destroy > 0:
-    print(f"  → ρ separates the trained model from both controls:")
-    print(f"    the measured non-commutativity is LEARNED order sensitivity.")
+    print("  → ρ separates the trained model from both controls:")
+    print("    the measured non-commutativity is LEARNED order sensitivity.")
 else:
-    print(f"  → Controls do not clearly separate; treat ρ with caution here")
-    print(f"    (see paper §6.5: construction dependence & small-scale caveats).")
+    print("  → Controls do not clearly separate; treat ρ with caution here")
+    print("    (see paper §6.5: construction dependence & small-scale caveats).")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # §15. SUMMARY (paper Table 5) & INFERENCE
 # ═══════════════════════════════════════════════════════════════════════════
 
-print(f"\n── Table 5: Summary of key empirical findings ──")
+print("\n── Table 5: Summary of key empirical findings ──")
 if curv_history:
     print(f"  Non-abelian ratio ρ            ≈ {rho_traj_mean:.3f} "
           f"({rho_traj_mean*100:.1f}% of curvature from non-commutativity)")
@@ -1203,7 +1203,7 @@ if fisher_history:
 if hess_history:
     print(f"  Negative-curvature transitions {transitions} across {num_steps} steps")
 
-print(f"\n── Manifold Summary ──")
+print("\n── Manifold Summary ──")
 print(f"  Type: {MANIFOLD_TYPE}")
 if MANIFOLD_TYPE == 'hyperbolic':
     print(f"  Curvature: κ = -{HYPERBOLIC_C} (constant negative)")
@@ -1234,7 +1234,7 @@ for s_idx in range(20):
     print(f"  path {s_idx+1:2d}: {''.join(path)}")
 
 print(f"\n{'='*72}")
-print(f"  GPT on Manifolds v4 — 'Is Attention Commutative?' synthesis complete")
+print("  GPT on Manifolds v4 — 'Is Attention Commutative?' synthesis complete")
 print(f"  Manifold: {MANIFOLD_TYPE} | Params: {len(params)}")
-print(f"  Ωₜ = (dω)ₜ + (ω∧ω)ₜ | ρ = Σ‖ω∧ω‖/(Σ‖dω‖+Σ‖ω∧ω‖) | Tₜ = exp(−ηωₜ)")
+print("  Ωₜ = (dω)ₜ + (ω∧ω)ₜ | ρ = Σ‖ω∧ω‖/(Σ‖dω‖+Σ‖ω∧ω‖) | Tₜ = exp(−ηωₜ)")
 print(f"{'='*72}")

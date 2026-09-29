@@ -6,11 +6,10 @@ Creates semantic embeddings from Quranic verses using models like:
 - BGE-M3 (BAAI/bge-m3)
 """
 
-import gc
 import logging
 from collections import OrderedDict
 from pathlib import Path
-from typing import Optional, Union, List, Dict, Literal, Any
+from typing import Optional, Union, List, Dict, Literal
 import numpy as np
 import torch
 

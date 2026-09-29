@@ -13,7 +13,6 @@ Based on:
 
 import argparse
 import asyncio
-import sys
 from pathlib import Path
 
 from src import QuranSteerer
@@ -415,7 +414,7 @@ def main():
         raise SystemExit(f"Invalid steering configuration: {exc}")
 
     # Print configuration
-    print(f"Configuration:")
+    print("Configuration:")
     print(f"  LLM Model: {config.llm_model}")
     print(f"  Embedding Model: {config.embedding_model}")
     print(f"  Preset: {args.preset or f'model default ({config.preset} fallback)'}")
