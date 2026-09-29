@@ -7,6 +7,10 @@ Combines embedding extraction, steering vector creation, and LLM inference.
 
 import gc
 import logging
+import hashlib
+import math
+import threading
+from functools import wraps
 import torch
 import numpy as np
 import os
@@ -18,6 +22,8 @@ from functools import lru_cache
 from .quran_embeddings import QuranEmbeddings
 from .steering_vectors import SteeringVectorExtractor, ContrastiveSteeringExtractor
 from .llm_wrapper import SteeredLLM
+from .steering_cache import load_vectors, save_vectors
+from .retrieval_context import quote_retrieval
 from .knowledge_base import QuranKnowledgeBase
 from .hybrid_knowledge_base import HybridQuranKnowledgeBase, HybridQueryResult
 from .graph_bridge import GraphBridgeGenerator, BridgeResult
@@ -181,6 +187,9 @@ class SteeringConfig:
         if not 0.0 <= self.coefficient <= 2.0:
             raise InvalidConfigError(f"Coefficient must be between 0.0 and 2.0, got {self.coefficient}")
         
+        if self.injection_mode == "blend" and self.coefficient > 1:
+            raise InvalidConfigError("Blend coefficient must be in [0, 1]")
+
         if self.injection_mode not in ("add", "blend", "replace", "clamp"):
             raise InvalidConfigError(f"Invalid injection mode: {self.injection_mode}")
         
@@ -240,6 +249,15 @@ def layer_distribution_scale(layer_idx: int, num_layers: int, distribution: str)
     return 1.0
 
 
+def serialized(method):
+    """Serialize high-level state changes; async retrieval stays outside scope."""
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._run_lock:
+            return method(self, *args, **kwargs)
+    return wrapped
+
+
 class QuranSteerer:
     """
     Main interface for steering LLMs with Quran-derived embeddings.
@@ -265,6 +283,8 @@ class QuranSteerer:
         llm_quantization: Optional[str] = None,  # "4bit", "8bit", or None
         use_graph_kb: bool = False,  # Enable graph-based knowledge base
         llm_func: Optional[callable] = None,  # LLM function for LightRAG
+        llm_revision: Optional[str] = None,
+        trust_remote_code: bool = False,
     ):
         """
         Initialize the Quran steerer.
@@ -281,6 +301,9 @@ class QuranSteerer:
         Raises:
             FileNotFoundError: If quran_path doesn't exist
         """
+        self._run_lock = threading.RLock()
+        self.llm_revision = llm_revision
+        self.trust_remote_code = trust_remote_code
         self.llm_model_name = llm_model
         self.embedding_model_name = embedding_model
         self.quran_path = Path(quran_path)
@@ -324,9 +347,11 @@ class QuranSteerer:
         self.steering_vectors: Optional[Dict[int, torch.Tensor]] = None
         self._theme_embeddings: Optional[np.ndarray] = None  # For auto domain bridges
         self.config = SteeringConfig()
+        self.last_run_diagnostics = {}
         
         logger.debug(f"Initialized QuranSteerer with model={llm_model}, device={self.device}")
 
+    @serialized
     def load_models(self, load_llm: bool = True, load_embedder: bool = True) -> None:
         """
         Load the required models.
@@ -350,6 +375,8 @@ class QuranSteerer:
                 device=self.device,
                 load_in_8bit=self.llm_quantization == "8bit",
                 load_in_4bit=self.llm_quantization == "4bit",
+                revision=self.llm_revision,
+                trust_remote_code=self.trust_remote_code,
             )
             self.llm.load_model()
 
@@ -560,7 +587,8 @@ class QuranSteerer:
         max_new_tokens: int = 100,
         temperature: float = 0.7,
         query_mode: str = "hybrid",
-        use_dynamic_steering: bool = True,
+        use_dynamic_steering: bool = False,
+        trusted_retrieval: bool = False,
         **kwargs,
     ) -> str:
         """
@@ -580,6 +608,8 @@ class QuranSteerer:
         Returns:
             Generated text response
         """
+        if use_dynamic_steering and not trusted_retrieval:
+            raise InvalidConfigError("Dynamic steering requires explicitly trusted retrieval")
         self._ensure_llm_loaded()
 
         if self.hybrid_kb is None:
@@ -592,49 +622,59 @@ class QuranSteerer:
             use_bridges=True,
         )
 
-        # Apply dynamic steering from vector results
-        if use_dynamic_steering and result.vector_results:
-            dynamic_vectors = self.compute_dynamic_steering(result.vector_results)
-            if dynamic_vectors:
-                self.apply_dynamic_steering(dynamic_vectors)
+        return self._generate_graph_result(prompt, result, max_new_tokens,
+                                           temperature, use_dynamic_steering, **kwargs)
 
-        # Build enhanced prompt with graph context
-        context_parts = []
+    @serialized
+    def _generate_graph_result(self, prompt, result, max_new_tokens,
+                               temperature, use_dynamic_steering, **kwargs):
+        self.last_run_diagnostics = {}
+        with self.llm.steering_session():
+            # Apply dynamic steering from vector results
+            if use_dynamic_steering and result.vector_results:
+                dynamic_vectors = self.compute_dynamic_steering(result.vector_results)
+                if dynamic_vectors:
+                    self.apply_dynamic_steering(dynamic_vectors)
 
-        # Graph answer provides high-level reasoning
-        if result.graph_answer:
-            context_parts.append(f"**Graph Analysis**:\n{result.graph_answer}")
+            # Build enhanced prompt with graph context
+            context_parts = []
 
-        # Vector results provide specific verses
-        if result.vector_results:
-            verses = result.vector_results.get('verse', [])
-            if verses:
-                verses_txt = "\n".join([f"- {r['content']}" for r in verses[:3]])
-                context_parts.append(f"**Relevant Verses**:\n{verses_txt}")
+            # Graph answer provides high-level reasoning
+            if result.graph_answer:
+                context_parts.append(f"**Graph Analysis**:\n{result.graph_answer}")
 
-        # Bridges show the conceptual mapping
-        if result.bridges:
-            context_parts.append(f"**Thematic Bridges**: {', '.join(result.bridges)}")
+            # Vector results provide specific verses
+            if result.vector_results:
+                verses = result.vector_results.get('verse', [])
+                if verses:
+                    verses_txt = "\n".join([f"- {r['content']}" for r in verses[:3]])
+                    context_parts.append(f"**Relevant Verses**:\n{verses_txt}")
 
-        # Construct final prompt
-        context = "\n\n".join(context_parts)
+            # Bridges show the conceptual mapping
+            if result.bridges:
+                context_parts.append(f"**Thematic Bridges**: {', '.join(result.bridges)}")
 
-        final_prompt = (
-            f"### Quranic Knowledge Context\n"
-            f"{context}\n\n"
-            f"### Task\n{prompt}\n\n"
-            f"### Response\n"
-        )
+            # Construct final prompt
+            context = quote_retrieval("\n\n".join(context_parts), "hybrid_knowledge_base")
 
-        output = self.llm.generate(
-            prompt=final_prompt,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-            **kwargs,
-        )
+            final_prompt = (
+                f"### Quranic Knowledge Context\n"
+                f"{context}\n\n"
+                f"### Task\n{prompt}\n\n"
+                f"### Response\n"
+            )
 
-        return output
+            output = self.llm.generate(
+                prompt=final_prompt,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                **kwargs,
+            )
 
+            self.last_run_diagnostics = self.llm.get_steering_diagnostics()
+            return output
+
+    @serialized
     def compute_dynamic_steering(
         self,
         retrieved_results: MultiResolutionResults,
@@ -692,6 +732,8 @@ class QuranSteerer:
 
         # Create weighted mean vector
         weights = torch.tensor(processed_weights, device=self.device)
+        if not torch.isfinite(weights).all() or (weights < 0).any() or weights.sum() <= 0:
+            raise InvalidConfigError("Retrieval weights must be finite, nonnegative and sum above zero")
         weights = weights / weights.sum()
         
         dynamic_vectors: Dict[int, torch.Tensor] = {}
@@ -711,6 +753,7 @@ class QuranSteerer:
         
         return dynamic_vectors
 
+    @serialized
     def apply_dynamic_steering(
         self,
         dynamic_vectors: Dict[int, torch.Tensor],
@@ -729,6 +772,10 @@ class QuranSteerer:
         if blend_ratio is None:
             blend_ratio = STEERING_DEFAULTS.dynamic_blend_ratio
 
+        self.config.validate()
+        if not math.isfinite(blend_ratio) or not 0 <= blend_ratio <= 1:
+            raise InvalidConfigError("Dynamic blend ratio must be in [0, 1]")
+        self._validate_vectors(dynamic_vectors)
         # Clear existing steering
         self.llm.clear_steering()
 
@@ -759,15 +806,43 @@ class QuranSteerer:
                 layer_idx, self.llm.num_layers, self.config.layer_distribution
             )
 
-            scaled_vector = blended_vec * scale * self.config.coefficient
+            scaled_vector = blended_vec
+            effective_coefficient = scale * self.config.coefficient
+            if self.config.injection_mode == "replace":
+                scaled_vector = blended_vec * effective_coefficient
 
             self.llm.register_steering_hook(
                 layer_idx=layer_idx,
                 steering_vector=scaled_vector,
-                coefficient=1.0,
+                coefficient=effective_coefficient,
                 injection_mode=self.config.injection_mode,
             )
 
+    def _cache_metadata(self, recipe, **parameters):
+        revision = self.llm_revision
+        model = getattr(self.llm, "model", None)
+        actual_revision = getattr(getattr(model, "config", None), "_commit_hash", None)
+        if isinstance(actual_revision, str):
+            revision = actual_revision
+        return {"format": 1, "model": self.llm_model_name,
+                "revision": revision or "unresolved",
+                "corpus_sha256": hashlib.sha256(self.quran_path.read_bytes()).hexdigest(),
+                "hidden_size": self.llm.hidden_size, "num_layers": self.llm.num_layers,
+                "recipe": recipe, "parameters": parameters}
+
+    def _save_vectors(self, path, metadata):
+        save_vectors(path, {k: v.detach().float().cpu().numpy()
+                            for k, v in self.steering_vectors.items()}, metadata)
+
+    def _validate_vectors(self, vectors):
+        if not vectors:
+            raise InvalidConfigError("Steering vectors cannot be empty")
+        self._validate_layer_indices(list(vectors))
+        for vector in vectors.values():
+            if vector.shape != (self.llm.hidden_size,) or not torch.isfinite(vector).all():
+                raise InvalidConfigError("Vector must have the model hidden dimension and finite values")
+
+    @serialized
     def prepare_quran_steering(
         self,
         chunk_by: Literal["verse", "paragraph", "surah"] = "verse",
@@ -793,43 +868,19 @@ class QuranSteerer:
         if sample_size is None:
             sample_size = STEERING_DEFAULTS.activation_sample_size
 
-        # Try to load cached steering vectors directly
-        if cache_path and use_cached:
-            cache_path = Path(cache_path)
-            if cache_path.exists():
-                logger.info("Loading cached steering vectors...")
-                try:
-                    data = np.load(cache_path, allow_pickle=True)
-                    # Handle both npz formats
-                    if 'steering_vectors' in data:
-                        loaded_vecs = data['steering_vectors'].item()
-                        self.steering_vectors = {
-                            int(k): torch.tensor(v, device=self.device) 
-                            for k, v in loaded_vecs.items()
-                        }
-                    else:
-                        self.steering_vectors = {
-                            int(k): torch.tensor(v, device=self.device) 
-                            for k, v in data.items()
-                        }
-                    
-                    # Validate dimensions match current LLM's hidden size
-                    if self.steering_vectors:
-                        sample_vec = next(iter(self.steering_vectors.values()))
-                        expected_dim = self.llm.hidden_size
-                        actual_dim = sample_vec.shape[-1]
-                        if actual_dim != expected_dim:
-                            logger.warning(
-                                f"Cached vector dimension ({actual_dim}) doesn't match "
-                                f"LLM hidden size ({expected_dim}). Invalidating cache..."
-                            )
-                            cache_path.unlink()  # Delete stale cache
-                            self.steering_vectors = None
-                        else:
-                            self._apply_steering()
-                            return self.steering_vectors
-                except Exception as e:
-                    logger.warning(f"Failed to load cache: {e}. Recomputing...")
+        if type(sample_size) is not int or sample_size < 1:
+            raise InvalidConfigError("Sample size must be a positive integer")
+        metadata = self._cache_metadata("mean", chunk_by=chunk_by, sample_size=sample_size,
+                                        seed=STEERING_DEFAULTS.random_seed)
+        if cache_path and use_cached and Path(cache_path).exists():
+            try:
+                vectors = load_vectors(cache_path, metadata)
+                self.steering_vectors = {k: torch.tensor(v, device=self.device)
+                                         for k, v in vectors.items()}
+                self._apply_steering()
+                return self.steering_vectors
+            except (ValueError, KeyError, OSError, EOFError) as exc:
+                logger.warning("Cache rejected; recomputing: %s", type(exc).__name__)
 
         # Load text
         texts = self.embedder.load_quran_text(self.quran_path, chunk_by=chunk_by)
@@ -869,12 +920,8 @@ class QuranSteerer:
             global_mean = torch.nn.functional.normalize(global_mean, dim=-1)
             self.steering_vectors[layer_idx] = global_mean
 
-        # Save if requested
         if cache_path:
-            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-            save_dict = {str(k): v.cpu().numpy() for k, v in self.steering_vectors.items()}
-            np.savez(cache_path, **save_dict)
-            logger.info(f"Saved steering vectors to {cache_path}")
+            self._save_vectors(cache_path, metadata)
 
         # Apply to LLM
         self._apply_steering()
@@ -884,6 +931,7 @@ class QuranSteerer:
 
         return self.steering_vectors
 
+    @serialized
     def prepare_verse_steering(
         self,
         verse_indices: List[int],
@@ -926,6 +974,7 @@ class QuranSteerer:
         
         return vectors
 
+    @serialized
     def prepare_thematic_steering(
         self,
         theme_query: str,
@@ -965,6 +1014,7 @@ class QuranSteerer:
 
         return self.prepare_verse_steering(list(top_indices))
 
+    @serialized
     def prepare_quran_persona(
         self,
         cache_dir: str = "vectors",
@@ -993,20 +1043,22 @@ class QuranSteerer:
             
         cache_path = Path(cache_dir) / "quran_persona_multiresolution.npz"
         
-        # Try to load cached
+        weights = (verse_weight, paragraph_weight, surah_weight)
+        if any(not math.isfinite(w) or w < 0 for w in weights) or sum(weights) <= 0:
+            raise InvalidConfigError("Persona weights must be finite, nonnegative and sum above zero")
+        metadata = self._cache_metadata("persona", weights=list(weights),
+                                        sample_size=STEERING_DEFAULTS.persona_sample_size,
+                                        seed=STEERING_DEFAULTS.random_seed)
         if cache_path.exists():
-            logger.info("Loading cached Quran Persona vectors...")
             try:
-                data = np.load(cache_path, allow_pickle=True)
-                self.steering_vectors = {
-                    int(k): torch.tensor(v, device=self.device) 
-                    for k, v in data.items()
-                }
+                vectors = load_vectors(cache_path, metadata)
+                self.steering_vectors = {k: torch.tensor(v, device=self.device)
+                                         for k, v in vectors.items()}
                 self._apply_steering()
                 return self.steering_vectors
-            except Exception as e:
-                logger.warning(f"Failed to load cache: {e}. Recomputing...")
-        
+            except (ValueError, KeyError, OSError, EOFError) as exc:
+                logger.warning("Persona cache rejected; recomputing: %s", type(exc).__name__)
+
         # Normalize weights
         total_weight = verse_weight + paragraph_weight + surah_weight
         verse_weight /= total_weight
@@ -1076,24 +1128,22 @@ class QuranSteerer:
             combined = torch.nn.functional.normalize(combined, dim=-1)
             self.steering_vectors[layer_idx] = combined
         
-        # Cache the combined vectors
-        Path(cache_dir).mkdir(parents=True, exist_ok=True)
-        save_dict = {str(k): v.cpu().numpy() for k, v in self.steering_vectors.items()}
-        np.savez(cache_path, **save_dict)
-        logger.info(f"Saved Quran Persona vectors to {cache_path}")
-        
+        self._save_vectors(cache_path, metadata)
+
         # Apply steering
         self._apply_steering()
         
         return self.steering_vectors
 
+    @serialized
     def _apply_steering(self) -> None:
         """Apply current steering vectors to LLM."""
         if self.steering_vectors is None or self.llm is None:
             return
         
-        # Validate config before applying
+        # Validate before replacing a usable configuration.
         self.config.validate()
+        self._validate_vectors(self.steering_vectors)
 
         target_layers = self.config.target_layers
         if target_layers is None:
@@ -1102,6 +1152,9 @@ class QuranSteerer:
                 self.config.layer_distribution,
                 self.config.focus_layer,
             )
+
+        self._validate_layer_indices(target_layers)
+        self.llm.clear_steering()
 
         for layer_idx in target_layers:
             if layer_idx not in self.steering_vectors:
@@ -1114,22 +1167,32 @@ class QuranSteerer:
                 layer_idx, self.llm.num_layers, self.config.layer_distribution
             )
 
-            scaled_vector = vector * scale * self.config.coefficient
+            scaled_vector = vector
+            effective_coefficient = scale * self.config.coefficient
+            if self.config.injection_mode == "replace":
+                scaled_vector = vector * effective_coefficient
 
             self.llm.register_steering_hook(
                 layer_idx=layer_idx,
                 steering_vector=scaled_vector,
-                coefficient=1.0, 
+                coefficient=effective_coefficient,
                 injection_mode=self.config.injection_mode,
             )
 
+    @serialized
     def set_steering_strength(self, coefficient: float) -> None:
         """Adjust steering strength without recomputing vectors."""
         self._ensure_llm_loaded()
+        previous = self.config.coefficient
         self.config.coefficient = coefficient
-        self.llm.clear_steering()
+        try:
+            self.config.validate()
+        except InvalidConfigError:
+            self.config.coefficient = previous
+            raise
         self._apply_steering()
 
+    @serialized
     def generate(
         self,
         prompt: str,
@@ -1137,7 +1200,8 @@ class QuranSteerer:
         temperature: float = 0.7,
         mra_mode: bool = False,
         use_domain_bridges: bool = True,
-        use_dynamic_steering: bool = True,
+        use_dynamic_steering: bool = False,
+        trusted_retrieval: bool = False,
         dynamic_blend_ratio: Optional[float] = None,
         reasoning_mode: bool = False,
         **kwargs,
@@ -1159,85 +1223,90 @@ class QuranSteerer:
         Returns:
             Generated text
         """
+        if use_dynamic_steering and not trusted_retrieval:
+            raise InvalidConfigError("Dynamic steering requires explicitly trusted retrieval")
         self._ensure_llm_loaded()
         
         if dynamic_blend_ratio is None:
             dynamic_blend_ratio = STEERING_DEFAULTS.dynamic_blend_ratio
 
-        final_prompt = prompt
+        self.last_run_diagnostics = {}
+        with self.llm.steering_session():
+            final_prompt = prompt
 
-        if mra_mode:
-            if self.knowledge_base is None:
-                self.initialize_knowledge_base()
+            if mra_mode:
+                if self.knowledge_base is None:
+                    self.initialize_knowledge_base()
 
-            # 1. Generate Domain Bridges
-            bridge_queries: List[str] = []
-            if use_domain_bridges:
-                bridge_queries = self.generate_domain_bridges(prompt)
+                # 1. Generate Domain Bridges
+                bridge_queries: List[str] = []
+                if use_domain_bridges:
+                    bridge_queries = self.generate_domain_bridges(prompt)
 
-            # 2. Retrieve Multi-Resolution Context 
-            if bridge_queries:
-                results = self.knowledge_base.query_with_bridges(
-                    original_query=prompt,
-                    bridge_queries=bridge_queries,
-                    n_results=3,
-                    include_embeddings=False
+                # 2. Retrieve Multi-Resolution Context
+                if bridge_queries:
+                    results = self.knowledge_base.query_with_bridges(
+                        original_query=prompt,
+                        bridge_queries=bridge_queries,
+                        n_results=3,
+                        include_embeddings=False
+                    )
+                    logger.info(f"Domain Bridges Applied: {bridge_queries}")
+                else:
+                    results = self.knowledge_base.query_multiresolution(
+                        prompt,
+                        n_results=3,
+                        include_embeddings=False
+                    )
+
+                # 3. Apply Dynamic Steering
+                if use_dynamic_steering:
+                    dynamic_vectors = self.compute_dynamic_steering(results)
+                    if dynamic_vectors:
+                        self.apply_dynamic_steering(dynamic_vectors, blend_ratio=dynamic_blend_ratio)
+                        logger.info(f"Dynamic Steering Applied (blend={dynamic_blend_ratio})")
+
+                # 4. Construct MRA Prompt
+                verses_txt = "\n".join([f"- {r['content']}" for r in results['verse']])
+                passages_txt = "\n".join([f"- {r['content']}" for r in results['passage']])
+                surahs_txt = "\n".join([f"- {r['content']}" for r in results['surah']])
+
+                verses_txt = quote_retrieval(verses_txt, "quran_db:verse")
+                passages_txt = quote_retrieval(passages_txt, "quran_db:passage")
+                surahs_txt = quote_retrieval(surahs_txt, "quran_db:surah")
+                bridges_section = ""
+                if bridge_queries:
+                    bridges_section = f"**Domain Bridges**: {', '.join(bridge_queries)}\n\n"
+
+                final_prompt = (
+                    f"### Quranic Multi-Resolution Context\n"
+                    f"{bridges_section}"
+                    f"**Micro (Verses):**\n{verses_txt}\n\n"
+                    f"**Meso (Passages):**\n{passages_txt}\n\n"
+                    f"**Macro (Surahs):**\n{surahs_txt}\n\n"
+                    f"### Task\n{prompt}\n\n"
+                    f"### Instruction\n"
+                    f"Perform a Multi-Resolution Analysis (MRA) and Multidomain Analogy:\n"
+                    f"1. **Micro Analysis**: How do the specific verses relate?\n"
+                    f"2. **Theme Analysis**: How do the broader passage themes apply?\n"
+                    f"3. **Multidomain Analogy**: Draw an analogy between these Quranic principles and the user's specific domain context.\n"
+                    f"4. **Synthesis**: Provide a clear answer based on this deep thinking.\n\n"
+                    f"### Response\n"
                 )
-                logger.info(f"Domain Bridges Applied: {bridge_queries}")
-            else:
-                results = self.knowledge_base.query_multiresolution(
-                    prompt,
-                    n_results=3,
-                    include_embeddings=False
-                )
+                logger.info("MRA Context Injected")
 
-            # 3. Apply Dynamic Steering
-            if use_dynamic_steering:
-                dynamic_vectors = self.compute_dynamic_steering(results)
-                if dynamic_vectors:
-                    self.apply_dynamic_steering(dynamic_vectors, blend_ratio=dynamic_blend_ratio)
-                    logger.info(f"Dynamic Steering Applied (blend={dynamic_blend_ratio})")
-
-            # 4. Construct MRA Prompt
-            verses_txt = "\n".join([f"- {r['content']}" for r in results['verse']])
-            passages_txt = "\n".join([f"- {r['content']}" for r in results['passage']])
-            surahs_txt = "\n".join([f"- {r['content']}" for r in results['surah']])
-
-            bridges_section = ""
-            if bridge_queries:
-                bridges_section = f"**Domain Bridges**: {', '.join(bridge_queries)}\n\n"
-
-            final_prompt = (
-                f"### Quranic Multi-Resolution Context\n"
-                f"{bridges_section}"
-                f"**Micro (Verses):**\n{verses_txt}\n\n"
-                f"**Meso (Passages):**\n{passages_txt}\n\n"
-                f"**Macro (Surahs):**\n{surahs_txt}\n\n"
-                f"### Task\n{prompt}\n\n"
-                f"### Instruction\n"
-                f"Perform a Multi-Resolution Analysis (MRA) and Multidomain Analogy:\n"
-                f"1. **Micro Analysis**: How do the specific verses relate?\n"
-                f"2. **Theme Analysis**: How do the broader passage themes apply?\n"
-                f"3. **Multidomain Analogy**: Draw an analogy between these Quranic principles and the user's specific domain context.\n"
-                f"4. **Synthesis**: Provide a clear answer based on this deep thinking.\n\n"
-                f"### Response\n"
+            output = self.llm.generate(
+                prompt=final_prompt,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                reasoning_mode=reasoning_mode,
+                **kwargs,
             )
-            logger.info("MRA Context Injected")
 
-        output = self.llm.generate(
-            prompt=final_prompt,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-            reasoning_mode=reasoning_mode,
-            **kwargs,
-        )
+            self.last_run_diagnostics = self.llm.get_steering_diagnostics()
+            return output
 
-        if mra_mode and use_dynamic_steering:
-            self.llm.clear_steering()
-            self._apply_steering()
-
-        return output
-
+    @serialized
     def generate_unsteered(
         self,
         prompt: str,
@@ -1249,6 +1318,7 @@ class QuranSteerer:
         with self.llm.steering_disabled():
             return self.llm.generate(prompt, max_new_tokens=max_new_tokens, **kwargs)
 
+    @serialized
     def compare(
         self,
         prompt: str,
@@ -1313,6 +1383,7 @@ class ContrastiveQuranSteerer(QuranSteerer):
         self.positive_activations: Optional[Dict[int, List[torch.Tensor]]] = None
         self.negative_activations: Optional[Dict[int, List[torch.Tensor]]] = None
 
+    @serialized
     def prepare_contrastive_steering(
         self,
         positive_texts: List[str],
@@ -1418,8 +1489,9 @@ class ContrastiveQuranSteerer(QuranSteerer):
         # Cache if requested
         if cache_path:
             cache_path = Path(cache_path)
-            save_dict = {str(k): v.cpu().numpy() for k, v in self.steering_vectors.items()}
-            np.savez(cache_path, **save_dict)
+            self._save_vectors(cache_path, self._cache_metadata("contrastive",
+                positive_sha256=hashlib.sha256(repr(positive_texts).encode()).hexdigest(),
+                negative_sha256=hashlib.sha256(repr(negative_texts).encode()).hexdigest()))
             logger.info(f"Saved contrastive vectors to {cache_path}")
         
         # Apply steering
@@ -1431,6 +1503,7 @@ class ContrastiveQuranSteerer(QuranSteerer):
         logger.info(f"Contrastive steering prepared with {len(self.steering_vectors)} layers")
         return self.steering_vectors
 
+    @serialized
     def prepare_quran_contrastive(
         self,
         neutral_texts: Optional[List[str]] = None,

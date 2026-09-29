@@ -1,435 +1,144 @@
-# Machine-POI: LLM Steering with Quranic Semantic Embeddings
+# Machine-POI: Agent Action Containment and Steering Research
 
-Steer language model outputs using semantic embeddings derived from Quranic text. This project implements **activation engineering** techniques to inject Quran-derived "steering vectors" into LLM hidden states during inference.
+Machine-POI combines a **host-side gateway for agent tool actions** with a research
+library for Quran-derived activation steering, retrieval, and model diagnostics.
+The components work independently: the guardian uses Python's standard library;
+steering experiments use PyTorch, Transformers, and optional retrieval services.
 
-```
-╔═══════════════════════════════════════════════════════════════════════╗
-║                           Machine-POI                                 ║
-║          LLM Steering with Quranic Semantic Embeddings                ║
-╠═══════════════════════════════════════════════════════════════════════╣
-║  Features:                                                            ║
-║    • Multi-Resolution Analysis (Verse/Passage/Surah)                  ║
-║    • LightRAG Knowledge Graph Integration (NEW)                       ║
-║    • Domain Bridging for Cross-Domain Analogies                       ║
-║    • Quran Persona Steering                                           ║
-║    • Contrastive Activation Addition (CAA)                            ║
-╠═══════════════════════════════════════════════════════════════════════╣
-║  Based on: https://arxiv.org/abs/2308.10248 (ActAdd)                  ║
-║            https://arxiv.org/abs/2312.06681 (CAA)                     ║
-╚═══════════════════════════════════════════════════════════════════════╝
-```
+The guardian checks what an agent is permitted to do at the tool boundary.
+Steering changes model activations and can affect language, style, and task
+performance. Neither steering nor a diagnostic score grants tool permissions.
 
-## Overview
+## Start with the guardian
 
-Machine-POI uses text embeddings from Quran verses to create semantic steering vectors that influence LLM behavior without fine-tuning. The steering is applied at inference time by modifying intermediate layer activations.
-
-### Key Logic: Activation Steering
-
-Unlike simple embedding projection (which can be random), this project uses **Mean Activation Steering**. We run representative samples of Quranic text through the LLM itself to capture the "Quranic Mindset" as a set of activation vectors. This ensures the steering is mathematically consistent with the model's internal representation.
-
-### Key Features
-
-- **Quran Persona Mode**: Aggregate activations from all resolutions (verse, paragraph, surah) into a unified steering vector
-- **Multi-Resolution Analysis (MRA)**: Dynamic context retrieval using ChromaDB knowledge base
-  - **Verse (Micro)**: Individual ayat (~6,236 verses)
-  - **Passage (Meso)**: Groups of 19 consecutive verses
-  - **Surah (Macro)**: Complete chapters (114 surahs)
-- **LightRAG Knowledge Graph** *(NEW)*: Entity-relationship extraction for Quranic concepts
-  - Graph-based retrieval for multi-hop reasoning
-  - Hybrid query modes (vector, graph, hybrid, auto)
-  - Supports OpenAI (GPT-5.2), Gemini (3.0 Pro), Ollama, local LLMs
-- **Domain Bridging**: Maps modern concepts (e.g., "debugging", "stress") to Quranic themes
-  - Three-tier bridging: Static lookup → Graph traversal → Embedding similarity
-- **Contrastive Activation Addition (CAA)**: Difference-based steering vectors
-- **Thematic Steering**: Steer toward specific themes (mercy, justice, patience, etc.)
-- **Multiple Injection Modes**: `add`, `blend`, `replace`, and `clamp` (recommended for stability)
-- **Workspace-Aware Steering**: Optional intermediate-layer targeting inspired by global workspace interpretability research
-- **Workspace Diagnostics**: Tensor-level metrics for inspecting activation alignment and perturbation size, plus attention-transport geometry (non-abelian ratio ρ and holonomy) for auditing whether steering changes the model's context routing
-- **Comparison Mode**: Side-by-side comparison of steered vs baseline outputs
-- **Native Reasoning Modes**: DeepSeek-R1, Qwen3, Phi-4 reasoning support
-- **8 Supported LLMs**: From 135M to 3.8B parameters
-
-### Based On
-
-- [Activation Addition (ActAdd)](https://arxiv.org/abs/2308.10248)
-- [Contrastive Activation Addition (CAA)](https://arxiv.org/abs/2312.06681)
-- [Eiffel Tower LLaMA](https://github.com/scienceetonnante/eiffel-tower-llama) — clamp injection mode inspired by this work
-
-## Architecture
-
-```
-machine-poi/
-├── main.py                   # CLI entry point
-├── compare_models.py         # Model comparison tool
-├── config.py                 # Model configs, presets, SteeringDefaults
-├── al-quran.txt              # Quran text (Arabic, ~739KB)
-├── PAPER.md                  # Academic paper describing the methodology
-├── requirements.txt          # Dependencies
-├── Makefile                  # Test commands
-├── src/                      # Core library (10 modules)
-│   ├── steerer.py            # High-level QuranSteerer API
-│   ├── llm_wrapper.py        # LLM hooks and steering injection
-│   ├── quran_embeddings.py   # Text embedding & chunking
-│   ├── steering_vectors.py   # Vector projection utilities
-│   ├── knowledge_base.py     # ChromaDB for MRA mode
-│   ├── lightrag_adapter.py   # LightRAG knowledge graph wrapper
-│   ├── hybrid_knowledge_base.py  # Combined vector + graph KB
-│   ├── graph_bridge.py       # Graph-based domain bridging
-│   ├── llm_adapters.py       # Adapters for OpenAI, Gemini, Ollama
-│   └── prompts/              # Entity extraction prompts
-├── experiments/              # Paper reproduction scripts
-│   └── reproduce_paper.py    # Reproduces paper experiments
-├── tests/                    # Comprehensive test suite (100+ tests)
-├── vectors/                  # Cached steering vectors
-├── quran_db/                 # ChromaDB storage for MRA
-└── quran_lightrag/           # LightRAG graph storage
-```
-
-### Component Overview
-
-| Component | Purpose |
-|-----------|---------|
-| `QuranSteerer` | High-level API orchestrating all components |
-| `ContrastiveQuranSteerer` | CAA-based steering with positive/negative examples |
-| `SteeredLLM` | Wraps HuggingFace models with activation hooks |
-| `QuranEmbeddings` | Creates embeddings with LRU cache |
-| `SteeringVectorExtractor` | Projects embeddings → LLM hidden dimensions |
-| `QuranKnowledgeBase` | Multi-resolution ChromaDB for MRA retrieval |
-| `HybridQuranKnowledgeBase` | Combined vector + graph retrieval |
-| `QuranLightRAG` | LightRAG wrapper for Quranic knowledge graph |
-| `GraphBridgeGenerator` | Three-tier domain bridging with graph traversal |
-
-## Workspace-Inspired Interpretability Roadmap
-
-Machine-POI now includes an initial workspace-inspired steering path based on recent global workspace interpretability work. The goal is not to claim full mechanistic access to a model's internal workspace, but to make steering more selective, auditable, and concept-oriented.
-
-### Conceptual boundaries
-
-- **Retrieval grounding**: ChromaDB and LightRAG add relevant Quranic context to the prompt or query workflow.
-- **Activation steering**: Mean activation steering modifies hidden states without changing model weights.
-- **CAA**: Contrastive Activation Addition creates a direction from positive and negative examples.
-- **Workspace-aware steering**: The `workspace` layer distribution targets intermediate layers that are more likely to carry reusable internal representations.
-- **Diagnostics**: `src/workspace_diagnostics.py` measures activation norm, steering norm, cosine alignment, projection magnitude, and relative perturbation size; call `SteeredLLM.get_steering_diagnostics()` after a steered forward pass to inspect captured hooks.
-
-### Roadmap
-
-See [`docs/global_workspace_improvement_plan.md`](docs/global_workspace_improvement_plan.md) for the full plan. Completed initial steps include:
-
-1. `workspace` layer distribution support in the steering configuration.
-2. Reusable workspace layer selection and layer scaling helpers.
-3. Tensor-only diagnostics for steering hooks and captured activations.
-
-Planned follow-up work includes a CLI audit mode, structured Quranic concept vocabulary, counterfactual-reflection experiments, and explicit oversteering safeguards.
-
-## Installation
+From a checkout of this repository, with Python 3.10 or later:
 
 ```bash
-pip install -r requirements.txt
+python -m examples.guarded_agent.host
+python -m examples.guarded_agent.process_demo
+python -m evals.rogue_agent.run --output /tmp/machine-poi-evaluation.json
 ```
 
-### Requirements
+These commands need no model downloads, ML packages, API keys, or external tools.
+The first demo executes an authorized mock write, pauses an internal send for
+simulated operator approval, then blocks an external recipient. The second sends
+JSON proposals from a separate worker process to the host. All effects are
+in-memory mocks; the process demo is not an OS sandbox.
 
-- Python 3.10+
-- PyTorch 2.0+
-- ~4GB RAM minimum (more for larger models)
-- GPU recommended but not required
+| Control | Implemented behavior |
+| --- | --- |
+| Task grants | Host-issued, expiring grants with exact tool, resource, destination and data-class scopes |
+| Tool adapters | Strict argument fields/types; trusted code resolves scope from the actual arguments |
+| Operator review | Sensitive actions pause; approval binds to stored arguments, resolved scope and versions |
+| Budgets and replay | Atomic action/cost/token reservations, bounded attempts, shared ancestor budgets and single-use action IDs |
+| Stop and recovery | Stop descendants, cancel queued/in-flight work cooperatively, invoke a host revocation callback |
+| Audit and shadow mode | Redacted hash-chained events; preview decisions without executing tools |
 
-## Quick Start
+**Deployment boundary:** this is a reference runtime for one trusted host process
+and one async event loop. The host must authenticate callers, isolate the agent,
+keep credentials outside its reach, and route every protected action through the
+gateway. The research CLI is not automatically connected to the guardian. Real
+credential revocation, durable state, remote-job cancellation and production
+rollout remain host integration work. See the [guardian guide](docs/guardian_integration.md).
 
-### Python API
+## Steering and retrieval research
 
-```python
-from src import QuranSteerer, ContrastiveQuranSteerer
+The research library supports mean-activation and contrastive vectors, weighted
+verse/passage/surah profiles, ChromaDB retrieval, optional LightRAG graph
+retrieval, and per-layer/per-head diagnostics. Model weights are unchanged.
 
-# Initialize
-steerer = QuranSteerer(
-    llm_model="deepseek-r1-1.5b",
-    embedding_model="paraphrase-minilm",  # lightweight default
-)
-
-# Load models
-steerer.load_models()
-
-# Option 1: Standard Quran steering (uses Mean Activation)
-steerer.prepare_quran_steering(chunk_by="verse")
-
-# Option 2: Quran Persona (aggregates all resolutions - recommended)
-steerer.prepare_quran_persona()
-
-# Generate with steering
-output = steerer.generate("What is the meaning of justice?")
-print(output)
-
-# Compare steered vs baseline
-steered, baseline = steerer.compare("Tell me about mercy and compassion")
-print("Steered:", steered)
-print("Baseline:", baseline)
-
-# Contrastive steering (CAA)
-caa_steerer = ContrastiveQuranSteerer(llm_model="deepseek-r1-1.5b")
-caa_steerer.load_models()
-caa_steerer.prepare_quran_contrastive()  # Quran vs neutral text
-```
-
-### LightRAG Knowledge Graph (NEW)
-
-```python
-import asyncio
-from src.steerer import QuranSteerer
-from src.llm_adapters import create_openai_adapter, create_gemini_adapter
-
-# Option 1: Use OpenAI (GPT-5.2)
-llm_func = create_openai_adapter(model_name="gpt-5.2")
-
-# Option 2: Use Gemini (3.0 Pro)
-# llm_func = create_gemini_adapter(model_name="gemini-3.0-pro")
-
-# Initialize with graph KB support
-steerer = QuranSteerer(
-    llm_model="deepseek-r1-1.5b",
-    use_graph_kb=True,
-    llm_func=llm_func,
-)
-steerer.load_models()
-
-async def main():
-    # Initialize hybrid knowledge base
-    await steerer.initialize_hybrid_knowledge_base()
-    
-    # Build graph index (one-time)
-    await steerer.hybrid_kb.build_index("al-quran.txt", build_graph=True)
-    
-    # Generate with graph-enhanced retrieval
-    result = await steerer.generate_with_graph(
-        prompt="How should I handle team conflicts?",
-        query_mode="hybrid",  # vector, graph, hybrid, auto
-    )
-    print(result)
-
-asyncio.run(main())
-
-### Command Line
+Install the research dependencies in a virtual environment:
 
 ```bash
-# Basic usage (uses deepseek-r1-1.5b by default)
-python3 main.py --interactive
-
-# With Quran Persona mode (recommended)
-python3 main.py --quran-persona --interactive
-
-# Use clamp injection for more stable steering at higher coefficients
-python3 main.py --quran-persona --injection-mode clamp --coefficient 0.8 --interactive
-
-# Target likely workspace-like intermediate layers
-python3 main.py --preset workspace --layer-distribution workspace --quran-persona --interactive
-
-# Compare steered vs baseline on test prompts
-python3 main.py --compare
-
-# Thematic steering toward specific concepts
-python3 main.py --theme mercy --prompt "How should we treat others?"
-
-# Multi-Resolution Analysis mode (requires --init-db first)
-python3 main.py --init-db          # Build ChromaDB knowledge base
-python3 main.py --mra --prompt "How should I deal with stress?"
-
-# LightRAG Knowledge Graph mode (NEW)
-python3 main.py --init-db --graph-kb --build-graph  # Build graph index
-python3 main.py --graph-kb --prompt "How should I handle team conflicts?"
-
-# Use different LLM providers for graph entity extraction
-python3 main.py --graph-kb --llm-provider openai --llm-api-model gpt-5.2
-python3 main.py --graph-kb --llm-provider gemini --llm-api-model gemini-3.0-pro
-python3 main.py --graph-kb --llm-provider ollama --llm-api-model qwen2.5:7b
-
-# Enable native reasoning mode (uses model-specific config)
-python3 main.py --llm deepseek-r1-1.5b --reasoning --prompt "What is wisdom?"
-
-# Compare multiple models with the same prompt
-./compare_models.py --models qwen3-0.6b deepseek-r1-1.5b --reasoning
-./compare_models.py --list-models
+python -m venv venv
+. venv/bin/activate
+python -m pip install -r requirements.txt
+python main.py --help
 ```
 
-## CLI Reference
+The full requirements include service and quantization dependencies. For the
+CPU-only test environment used in CI, follow the [testing guide](docs/testing.md).
+Actual inference requires model downloads and memory appropriate to the selected
+checkpoint, dtype and context length.
 
-| Flag | Description |
-|------|-------------|
-| `--llm MODEL` | LLM to steer (default: `deepseek-r1-1.5b`) |
-| `--embedding MODEL` | Embedding model (default: `paraphrase-minilm`) |
-| `--preset PRESET` | Steering preset: `gentle`, `moderate`, `strong`, `focused`, `workspace` |
-| `--coefficient FLOAT` | Steering strength (0.0–1.0, default: 0.5) |
-| `--injection-mode MODE` | How to inject: `add`, `blend`, `replace`, `clamp` |
-| `--layer-distribution MODE` | Layer targeting: `uniform`, `bell`, `focused`, `workspace` |
-| `--chunk-by TYPE` | Text chunking: `verse`, `paragraph`, `surah` |
-| `--quran-persona` | Enable Quran Persona mode (aggregates all resolutions) |
-| `--mra` | Enable Multi-Resolution Analysis with ChromaDB |
-| `--theme THEME` | Steer toward a specific theme |
-| `--interactive` | Interactive chat mode |
-| `--compare` | Run comparison on test prompts |
-| `--prompt TEXT` | Test a single prompt |
-| `--init-db` | Initialize ChromaDB knowledge base |
-| `--reasoning` | Enable native reasoning mode (model-specific) |
-| `--device DEVICE` | Force device: `cuda`, `cpu`, `mps` |
-| `--quantize MODE` | Quantization: `4bit`, `8bit` |
-| `--graph-kb` | Enable LightRAG knowledge graph |
-| `--llm-provider PROV` | LLM for graph extraction: `openai`, `gemini`, `ollama` |
-| `--llm-api-model MODEL` | Model name for API (e.g., `gpt-5.2`, `gemini-3.0-pro`) |
-| `--build-graph` | Build graph index (use with `--init-db --graph-kb`) |
-
-## Supported Models
-
-### LLMs
-
-| Model | Size | HuggingFace Path | Reasoning |
-|-------|------|------------------|----------|
-| `deepseek-r1-1.5b` | 1.5B | `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B` | ✅ `<think>` blocks |
-| `qwen3-0.6b` | 0.6B | `Qwen/Qwen3-0.6B` | ✅ `enable_thinking` |
-| `qwen2.5-0.5b` | 0.5B | `Qwen/Qwen2.5-0.5B-Instruct` | — |
-| `smollm2-135m` | 135M | `HuggingFaceTB/SmolLM2-135M-Instruct` | — |
-| `smollm2-360m` | 360M | `HuggingFaceTB/SmolLM2-360M-Instruct` | — |
-| `smollm3` | 3B | `HuggingFaceTB/SmolLM3-3B` | — |
-| `gemma-270m` | 270M | `google/gemma-3-270m-it` | — |
-| `phi4-mini` | 3.8B | `microsoft/Phi-4-mini-reasoning` | ✅ Math reasoning |
-
-### Embedding Models
-
-| Model | Dim | Arabic Support | Memory |
-|-------|-----|----------------|--------|
-| `paraphrase-minilm` | 384 | ✅ | ~0.5 GB |
-| `bge-m3` | 1024 | ✅ | ~2.5 GB |
-| `multilingual-e5` | 1024 | ✅ | ~2.0 GB |
-| `qwen-embedding` | 3584 | ✅ | ~15 GB |
-
-## How It Works
-
-### 1. Data Preparation
-
-The Quran text is loaded and chunked at three resolutions:
-- **Verse**: Individual ayat (~6,236 verses)
-- **Passage**: Groups of 19 consecutive verses
-- **Surah**: Complete chapters using standard 114 Surah verse counts
-
-### 2. Steering Vector Calculation (Mean Activation)
-
-To steer the model, we do not simply project embeddings. Instead, we:
-1. Sample a representative set of Quran verses.
-2. Feed these verses into the LLM.
-3. Extract the internal hidden states (activations) at each layer.
-4. Compute the **mean activation vector** for each layer.
-
-This vector represents the "direction" of Quranic content in the model's own latents.
-
-### 3. Activation Injection
-
-During inference, this mean activation vector is added (or clamped) to the model's current activations, "nudging" the generation towards the Quranic style and semantic space.
-
-```python
-llm.register_steering_hook(
-    layer_idx=12,
-    steering_vector=mean_activation_vector,
-    coefficient=0.5,
-    injection_mode="clamp"
-)
-```
-
-### 4. Quran Persona Mode
-
-Aggregates mean activations from Verse, Paragraph, and Surah levels with configurable weights:
-- Verse: 50% (precise semantic signals)
-- Paragraph: 35% (thematic context)
-- Surah: 15% (foundational principles)
-
-### 5. Domain Bridging
-
-Maps user concepts (e.g., "bug", "deadline", "stress") to Quranic themes for better retrieval in MRA mode. This enables the system to find relevant Quranic guidance even for modern/technical topics.
-
-| User Domain | Quranic Themes |
-|-------------|----------------|
-| debugging | patience, careful examination, seeking truth |
-| stress | sabr, trust in Allah, peace of heart |
-| teamwork | unity, brotherhood, cooperation, ummah |
-| leadership | responsibility, trust, justice, consultation |
-
-## Injection Modes
-
-| Mode | Description | Best For |
-|------|-------------|----------|
-| `add` | Add steering vector to activations | Gentle steering, lower coefficients |
-| `blend` | Interpolate between original and steering | Balanced control |
-| `replace` | Replace activations entirely | Maximum effect (use carefully) |
-| `clamp` | Remove projection, add controlled amount | **Recommended for strong steering** |
-
-The `clamp` mode is inspired by [Eiffel Tower LLaMA](https://github.com/scienceetonnante/eiffel-tower-llama). It first removes the existing projection of activations onto the steering direction, then adds a controlled amount. This prevents over-biasing and produces more fluent outputs at higher coefficients.
-
-## Reproducing Paper Experiments
-
-See [PAPER.md](PAPER.md) for the full academic paper. To reproduce experiments:
+A basic steering comparison is available through the CLI:
 
 ```bash
-# Run all paper experiments
-python3 experiments/reproduce_paper.py
-
-# Run specific sections
-python3 experiments/reproduce_paper.py --section 5.1  # Qualitative comparison
-python3 experiments/reproduce_paper.py --section 5.2  # Thematic analysis
-python3 experiments/reproduce_paper.py --section 5.3  # Coefficient sensitivity
-
-# Quick test with fewer prompts
-python3 experiments/reproduce_paper.py --quick
+python main.py --llm qwen2.5-0.5b --coefficient 0.2 \
+    --prompt "How should we resolve a disagreement?"
 ```
 
-## Testing
+This coefficient is an experimental setting, not a validated safe dose. For
+model-specific chat formatting, MRA/graph retrieval, dynamic steering opt-in,
+cache migration, and the complete CLI reference, use the
+[steering guide](docs/steering_guide.md). Some CLI comparison paths bypass
+retrieval; that guide identifies the working API paths.
 
-The project includes a comprehensive test suite with 100 tests covering all modules:
+Recent runtime changes serialize model use and hook mutation, restore temporary
+steering after failures, replace duplicate layer hooks, and correct clamp
+strength and diagnostics. Remote model code defaults off; explicit opt-in
+requires a full commit revision. Steering caches use numeric arrays with
+model/corpus/recipe metadata and reject object arrays. Retrieval-derived dynamic
+steering defaults off and requires an explicit trusted-corpus opt-in.
 
-```bash
-# Run fast tests (excludes slow/integration)
-make test
+## Evidence and current limits
 
-# Run all tests including slow ones
-make test-all
+- **Runtime correctness:** the implementation validation passed 197 local tests
+  with four slow/integration tests excluded. CI passed the full offline runtime
+  job and guardian jobs on Python 3.10 and 3.12. See dated evidence and commands
+  in [testing](docs/testing.md).
+- **Action containment fixtures:** all 12 synthetic cases passed, including nine
+  forbidden actions, with zero unapproved mock side effects. Three benign cases
+  had zero false blocks and one review request. The
+  [report](evals/rogue_agent/results.json) evaluates already-proposed actions;
+  it does not measure a model's resistance to prompt injection.
+- **Steering behavior:** the committed [model experiment report](experiments/results/README.md)
+  includes output collapse in small-model conditions and language/persona spillover
+  in the small Gemma samples. These results do not establish preserved general
+  capabilities, rogue-agent detection, or a universally safe coefficient.
+- **Pending deployment:** no live agent host or real external side effects were
+  evaluated in the guardian implementation. Held-out model comparisons and host
+  bypass/kill-switch drills remain acceptance gates.
 
-# Run with coverage report
-make test-cov
+## Documentation
 
-# Run specific test file
-make test-file FILE=tests/test_steerer.py
+| Document | What it covers |
+| --- | --- |
+| [Architecture](docs/architecture.md) | Components, authority boundary, execution flow and state ownership |
+| [Guardian integration](docs/guardian_integration.md) | Runnable API example, grants, approvals, failures and host rollout |
+| [Steering guide](docs/steering_guide.md) | Python/CLI usage, model aliases, injection semantics and migration |
+| [Testing and evaluation](docs/testing.md) | Minimal and full test environments, evidence and experiment limits |
+| [Containment plan](docs/rogue_agent_containment_plan.md) | Baseline findings, delivered slices and remaining deployment gates |
+| [Research note](PAPER.md) | Implemented steering methods and the evidence supporting current claims |
+| [Workspace research roadmap](docs/global_workspace_improvement_plan.md) | Diagnostic work and experiments still planned |
+| [Geometry literature notes](docs/curvature_literature_roadmap_review.md) | Research leads; proposed connections require validation |
 
-# Run tests matching a pattern
-make test-match MATCH="injection"
-```
+## Repository map
 
-### Test Coverage
+| Path | Role |
+| --- | --- |
+| `src/guardian/` | Standard-library policy gateway, contracts, review, state, recovery and audit |
+| `examples/guarded_agent/` | Mock host and JSON proposal worker |
+| `evals/rogue_agent/` | Synthetic action cases, runner and committed report |
+| `src/steerer.py`, `src/llm_wrapper.py` | Research orchestration, model loading and steering hooks |
+| `src/retrieval_context.py`, `src/steering_cache.py` | Quoted/bounded context and numeric steering caches |
+| `src/knowledge_base.py`, `src/hybrid_knowledge_base.py` | Vector and optional graph retrieval |
+| `src/workspace_diagnostics.py`, `src/transport_stats.py` | Activation/transport summaries and paired statistics |
+| `main.py`, `config.py` | Research CLI, model aliases and presets |
+| `experiments/` | Model experiments and historical results |
+| `tests/`, `.github/workflows/containment.yml` | Regression tests and CI |
 
-| Module | Tests |
-|--------|-------|
-| `test_knowledge_base.py` | ChromaDB indexing/querying |
-| `test_llm_wrapper.py` | Activation hooks, injection modes |
-| `test_quran_embeddings.py` | Text chunking, embedding creation |
-| `test_steerer.py` | End-to-end steering workflows |
-| `test_steering_vectors.py` | Vector projection, contrastive methods |
+## Research references
 
-## Dependencies
+- Turner et al., [Steering Language Models With Activation Engineering](https://arxiv.org/abs/2308.10248).
+- Rimsky et al., [Steering Llama 2 via Contrastive Activation Addition](https://aclanthology.org/2024.acl-long.828/).
+- Lewis et al., [Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks](https://arxiv.org/abs/2005.11401).
 
-- `torch>=2.0.0` - PyTorch for model inference
-- `transformers>=4.40.0` - HuggingFace model loading
-- `sentence-transformers` - Embedding models
-- `chromadb` - Vector database for MRA mode
-- `lightrag-hku` - Knowledge graph for entity extraction
-- `networkx` - Graph storage backend
-- `openai` - OpenAI API adapter (GPT-5.2, etc.)
-- `google-generativeai` - Gemini API adapter
-- `httpx` - Async HTTP for Ollama
-- `bitsandbytes` - Quantization support (optional)
-- `accelerate` - Model loading optimization
+These are methodological references; their findings do not validate Machine-POI's
+particular vectors, checkpoints, or containment implementation.
 
-## References
+## License status
 
-- [Activation Addition: Steering Language Models Without Optimization](https://arxiv.org/abs/2308.10248)
-- [Steering Llama 2 via Contrastive Activation Addition](https://arxiv.org/abs/2312.06681)
-- [Eiffel Tower LLaMA](https://github.com/scienceetonnante/eiffel-tower-llama) — clamping approach
-- [Neuronpedia](https://www.neuronpedia.org) — SAE exploration
-
-## License
-
-MIT License
+This checkout does not contain a license file. The earlier README's MIT label was
+not accompanied by license terms; a repository license still needs to be supplied
+by the owner. Model and dataset terms must be checked separately.

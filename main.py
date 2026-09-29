@@ -72,6 +72,10 @@ Examples:
         help="Embedding model for Quran text",
     )
 
+    parser.add_argument("--revision", help="Pinned Hugging Face LLM commit revision")
+    parser.add_argument("--trust-remote-code", action="store_true",
+                        help="Opt into reviewed remote code; requires a full --revision commit")
+
     # Steering configuration
     parser.add_argument(
         "--preset",
@@ -424,6 +428,8 @@ def main():
         llm_quantization=config.quantization,
         use_graph_kb=args.graph_kb,
         llm_func=llm_func,
+        llm_revision=args.revision,
+        trust_remote_code=args.trust_remote_code,
     )
 
     if args.init_db:

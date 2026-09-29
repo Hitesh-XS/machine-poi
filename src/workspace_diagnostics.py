@@ -38,6 +38,7 @@ def summarize_layer_steering(
     steering_vector: torch.Tensor,
     coefficient: float = 1.0,
     eps: float = 1e-8,
+    injection_mode: str = "add",
 ) -> LayerSteeringDiagnostics:
     """
     Summarize how strongly an activation aligns with a steering vector.
@@ -56,7 +57,6 @@ def summarize_layer_steering(
 
     hidden = activation.detach().float()
     vector = steering_vector.detach().float()
-    perturbation = vector * coefficient
 
     flat_hidden = hidden.reshape(-1, hidden.shape[-1])
     hidden_norms = flat_hidden.norm(dim=-1)
@@ -71,13 +71,23 @@ def summarize_layer_steering(
     )
     projection = torch.matmul(flat_hidden, unit_vector)
 
+    if injection_mode == "add":
+        delta = (vector * coefficient).expand_as(flat_hidden)
+    elif injection_mode == "blend":
+        delta = coefficient * (vector - flat_hidden)
+    elif injection_mode == "replace":
+        delta = vector - flat_hidden
+    elif injection_mode == "clamp":
+        delta = (coefficient - projection).unsqueeze(-1) * unit_vector
+    else:
+        raise ValueError("Unknown injection mode")
     activation_norm = hidden_norms.mean()
     return LayerSteeringDiagnostics(
         activation_norm=float(activation_norm.item()),
         steering_norm=float(vector_norm.item()),
         mean_cosine_similarity=float(cosine.mean().item()),
         mean_projection_magnitude=float(projection.abs().mean().item()),
-        relative_perturbation=float((perturbation.norm() / activation_norm.clamp_min(eps)).item()),
+        relative_perturbation=float((delta.norm(dim=-1).mean() / activation_norm.clamp_min(eps)).item()),
     )
 
 
@@ -316,5 +326,6 @@ def summarize_steering_hooks(hooks: Dict[int, object]) -> Dict[int, LayerSteerin
             activation=activation,
             steering_vector=steering_vector,
             coefficient=coefficient,
+            injection_mode=getattr(hook, "injection_mode", "add"),
         )
     return diagnostics

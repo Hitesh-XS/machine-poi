@@ -1,5 +1,16 @@
 # Steered vs Baseline Attention-Transport: Results on Real Models
 
+**Relationship to the current runtime (2026-09-29):** this is a historical model
+experiment report. The guardian/steering-hardening changes did not re-run these
+models or rewrite the JSON evidence. The high-level API now restores temporary
+hooks, computes mode-specific perturbation summaries, and requires explicit
+trusted-retrieval opt-in for dynamic steering. Raw experimental vector scales and
+coefficients remain distinct from high-level normalized persona settings. See the
+[steering guide](../../docs/steering_guide.md) for current usage and the
+[testing guide](../../docs/testing.md) for separate guardian fixture results.
+These model observations do not establish action authorization or live-agent
+containment, and claims from one checkpoint/dose should not be generalized.
+
 > **2026-07-19 update.** The original results below used 1-4 prompts per
 > model and no significance testing, which was too little evidence to
 > support the causal claims being made. This update adds `src/transport_stats.py`

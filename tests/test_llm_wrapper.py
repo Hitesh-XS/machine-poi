@@ -544,7 +544,7 @@ class TestKvSharedLayerDiagnostics:
                     attentions=(self.attn_weights, self.attn_weights)
                 )
 
-        llm = SteeredLLM.__new__(SteeredLLM)
+        llm = SteeredLLM(device="cpu")
         llm.model = TinyModel()
         llm.config = MODEL_CONFIGS["llama"]
         llm.hooks = {}

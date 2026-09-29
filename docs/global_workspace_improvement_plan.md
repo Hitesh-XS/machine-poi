@@ -2,6 +2,13 @@
 
 This plan adapts ideas from Anthropic's 2026 Global Workspace research and the related Transformer Circuits workspace write-up for Machine-POI's Quranic activation-steering architecture.
 
+Implementation status reviewed 2026-09-29. This is a research roadmap. The
+[guardian architecture](architecture.md) enforces structured tool grants
+independently of steering and geometry; none of the diagnostics below grants
+authority. See the [steering guide](steering_guide.md) for current APIs and
+[testing guide](testing.md) for the distinction between runtime checks and
+behavioral evidence.
+
 ## Concepts to incorporate
 
 - **Workspace-like representations**: target the intermediate model states most likely to be reusable by downstream reasoning rather than only early parsing or late token-output states.
@@ -28,7 +35,7 @@ Steering should expose lightweight metrics that make internal perturbations insp
 - mean projection magnitude,
 - relative perturbation size.
 
-**Status:** Implemented as `src/workspace_diagnostics.py` with tensor-only unit tests. Runtime integrations can call `SteeredLLM.get_steering_diagnostics()` after generation has captured hook activations.
+**Status:** Implemented as `src/workspace_diagnostics.py` with tensor-only unit tests. Relative perturbation now uses the actual update for add, blend, replace and clamp. After high-level `generate` or `generate_with_graph`, read `QuranSteerer.last_run_diagnostics`: session restoration clears captured tensors. Low-level callers can use `SteeredLLM.get_steering_diagnostics()` while their enabled hooks still hold the captured activations. These summaries do not certify behavior or permissions.
 
 ### 2b. Add attention-transport (curvature) diagnostics
 
@@ -38,7 +45,7 @@ Beyond pointwise perturbation metrics, steering should be auditable for whether 
 - holonomy angles from exact transport maps T_t = exp(−η ω_t) around triangular position loops (loop-induced rotation, the "angle of context"),
 - variation vs. commutator energy, distinguishing position-dependent-but-commutative heads from genuinely order-sensitive heads.
 
-Comparing these per-head profiles with steering enabled vs. disabled answers whether an intervention shifts representations pointwise or alters the model's context routing. A standalone testbed reproducing the paper's experiments lives in `experiments/gpt_on_manifolds_v4.py`.
+Comparing these per-head profiles with steering enabled vs. disabled measures changes in the constructed transport diagnostic. Interpreting such a change as useful context routing requires output/task controls: the [committed results](../experiments/results/README.md) include collapse and persona spillover. A standalone manifold/transport testbed lives in `experiments/gpt_on_manifolds_v4.py`; its presence does not independently validate the cited research interpretation.
 
 **Status:** Implemented as `connection_bivectors()`, `summarize_attention_transport()`, `summarize_attention_transport_heads()`, and `pooled_non_abelian_ratio()` in `src/workspace_diagnostics.py` with tensor-only unit tests. Runtime integration: `SteeredLLM.get_attention_transport_diagnostics(prompt)` captures per-head attention weights and query/value projections in one forward pass (grouped-query attention supported); wrap it in `steering_disabled()` to obtain the unsteered baseline.
 
@@ -46,7 +53,7 @@ Comparing these per-head profiles with steering enabled vs. disabled answers whe
 
 The default Quran Persona and Quran steering paths should continue to rely on mean activations extracted from the steered LLM, rather than uncalibrated random projection from embedding space. Projection-based utilities should be treated as experimental unless calibrated.
 
-**Status:** Documented as an architecture direction. Future implementation should add runtime warnings to projection-based steering paths.
+**Status:** Mean, persona and contrastive high-level paths use unsteered model activations; projection utilities remain available for research. Future implementation should add runtime warnings to projection-based paths. Centering/normalization and model-specific output checks still matter: using model-native activations alone does not establish semantic selectivity.
 
 ### 4. Add a workspace audit mode
 
@@ -70,10 +77,10 @@ Move Quranic bridge themes into structured concept objects containing canonical 
 
 Future work should cap relative perturbation size per layer and surface warnings when coefficients cause broad hidden-state shifts.
 
-**Status:** Planned. The new diagnostics expose the relative perturbation metric needed for this safeguard.
+**Status:** Partially implemented. Runtime validation now rejects nonfinite vectors/configuration, blend coefficients outside [0, 1], and invalid dimensions. Hook state is serialized and restored, and clamp receives its intended coefficient. Automatic perturbation caps and calibrated behavioral warning thresholds remain planned. A small perturbation is not a universal safety guarantee; the centered SmolLM2 results still show generation collapse at a target ratio of at most 0.1. Such research thresholds cannot override guardian policy.
 
 ### 8. Clarify documentation
 
 The README should distinguish retrieval grounding, activation intervention, CAA, and workspace-style interpretability.
 
-**Status:** Implemented with a workspace-inspired roadmap section.
+**Status:** Implemented through the README, architecture, steering and testing guides. The research note separates measured model evidence from synthetic gateway tests, and the containment plan identifies the live-host work still pending.

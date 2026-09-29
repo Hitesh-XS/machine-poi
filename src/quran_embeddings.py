@@ -102,6 +102,8 @@ class QuranEmbeddings:
         device: Optional[str] = None,
         use_fp16: bool = True,
         max_length: int = 512,
+        revision: Optional[str] = None,
+        trust_remote_code: bool = False,
     ):
         """
         Initialize the Quran embeddings generator.
@@ -112,6 +114,11 @@ class QuranEmbeddings:
             use_fp16: Use half precision for memory efficiency
             max_length: Maximum sequence length for embeddings
         """
+        import re
+        if trust_remote_code and not re.fullmatch(r"[0-9a-fA-F]{40}", revision or ""):
+            raise ValueError("Remote code requires a pinned commit revision")
+        self.revision = revision
+        self.trust_remote_code = trust_remote_code
         self.model_name = model_name
         self.max_length = max_length
         self.use_fp16 = use_fp16
@@ -138,18 +145,10 @@ class QuranEmbeddings:
         model_path = self.SUPPORTED_MODELS.get(self.model_name, self.model_name)
         logger.info(f"Loading embedding model: {model_path}")
 
-        # For larger models, use specific loading strategies
-        if "qwen" in model_path.lower() or "7b" in model_path.lower():
-            self.model = SentenceTransformer(
-                model_path,
-                device=self.device,
-                trust_remote_code=True,
-            )
-        else:
-            self.model = SentenceTransformer(
-                model_path,
-                device=self.device,
-            )
+        self.model = SentenceTransformer(
+            model_path, device=self.device, revision=self.revision,
+            trust_remote_code=self.trust_remote_code,
+        )
 
         if self.use_fp16 and self.device != "cpu":
             self.model = self.model.half()
@@ -325,7 +324,8 @@ class QuranEmbeddings:
     ) -> Dict[str, np.ndarray]:
         """Load previously saved embeddings."""
         load_path = Path(load_path)
-        data = np.load(load_path, allow_pickle=True)
+        with np.load(load_path, allow_pickle=False) as archive:
+            data = {key: archive[key] for key in archive.files}
 
         texts = []
         texts_path = load_path.with_suffix(".texts.txt")
