@@ -1,4 +1,4 @@
-"""Tests for src/themes.py and the bridge paths that use it."""
+"""Tests for machine_poi/themes.py and the bridge paths that use it."""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, create_autospec
@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, create_autospec
 import numpy as np
 import pytest
 
-from src.quran_embeddings import QuranEmbeddings
-from src.themes import (
+from machine_poi.quran_embeddings import QuranEmbeddings
+from machine_poi.themes import (
     DOMAIN_BRIDGE_MAP,
     QURANIC_THEMES,
     matching_keywords,
@@ -75,7 +75,7 @@ def test_theme_index_is_normalized_and_computed_once_per_embedder():
 
 
 def test_steerer_embedding_fallback_uses_real_embedder_interface():
-    from src.steerer import QuranSteerer
+    from machine_poi.steerer import QuranSteerer
 
     steerer = QuranSteerer()
     steerer.embedder = fake_embedder()
@@ -86,7 +86,7 @@ def test_steerer_embedding_fallback_uses_real_embedder_interface():
 
 
 def test_graph_bridge_embedding_fallback_caches_theme_index():
-    from src.graph_bridge import GraphBridgeGenerator
+    from machine_poi.graph_bridge import GraphBridgeGenerator
 
     lightrag = MagicMock()
     lightrag.query = AsyncMock(return_value={"answer": None})
@@ -98,7 +98,7 @@ def test_graph_bridge_embedding_fallback_caches_theme_index():
 
 
 def test_graph_term_extraction_uses_word_boundaries():
-    from src.graph_bridge import GraphBridgeGenerator
+    from machine_poi.graph_bridge import GraphBridgeGenerator
 
     generator = GraphBridgeGenerator(MagicMock())
     assert generator._extract_query_terms("Terror in the meetings") == ["meeting"]

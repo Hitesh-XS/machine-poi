@@ -33,10 +33,7 @@ from .themes import (
     theme_index,
 )
 
-# Import config types and defaults
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import (
+from .config import (
     STEERING_DEFAULTS,
     MultiResolutionResults,
 )

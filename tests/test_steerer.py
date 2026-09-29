@@ -1,5 +1,5 @@
 """
-Tests for src/steerer.py
+Tests for machine_poi/steerer.py
 
 Tests for:
 - QuranSteerer (main interface)
@@ -14,9 +14,9 @@ import torch
 from pathlib import Path
 from unittest.mock import Mock
 
-from src.llm_wrapper import SteeredLLM
-from src.quran_embeddings import QuranEmbeddings
-from src.steerer import InvalidConfigError
+from machine_poi.llm_wrapper import SteeredLLM
+from machine_poi.quran_embeddings import QuranEmbeddings
+from machine_poi.steerer import InvalidConfigError
 
 
 class TestSteeringConfig:
@@ -24,7 +24,7 @@ class TestSteeringConfig:
 
     def test_default_values(self):
         """Test default configuration values."""
-        from src.steerer import SteeringConfig
+        from machine_poi.steerer import SteeringConfig
         
         config = SteeringConfig()
         
@@ -36,7 +36,7 @@ class TestSteeringConfig:
 
     def test_custom_values(self):
         """Test custom configuration values."""
-        from src.steerer import SteeringConfig
+        from machine_poi.steerer import SteeringConfig
         
         config = SteeringConfig(
             coefficient=0.8,
@@ -52,7 +52,7 @@ class TestSteeringConfig:
 
     def test_workspace_distribution_is_valid(self):
         """Test workspace-aware layer distribution validation."""
-        from src.steerer import SteeringConfig, select_target_layers, select_workspace_layers
+        from machine_poi.steerer import SteeringConfig, select_target_layers, select_workspace_layers
 
         config = SteeringConfig(layer_distribution="workspace")
         config.validate()
@@ -68,14 +68,14 @@ class TestDomainBridgeMap:
 
     def test_domain_bridge_map_exists(self):
         """Test that domain bridge map is defined."""
-        from src.steerer import DOMAIN_BRIDGE_MAP
+        from machine_poi.steerer import DOMAIN_BRIDGE_MAP
         
         assert isinstance(DOMAIN_BRIDGE_MAP, dict)
         assert len(DOMAIN_BRIDGE_MAP) > 0
 
     def test_domain_bridge_map_categories(self):
         """Test that expected categories exist."""
-        from src.steerer import DOMAIN_BRIDGE_MAP
+        from machine_poi.steerer import DOMAIN_BRIDGE_MAP
         
         # Technical
         assert "bug" in DOMAIN_BRIDGE_MAP
@@ -92,7 +92,7 @@ class TestDomainBridgeMap:
 
     def test_domain_bridge_map_values_are_lists(self):
         """Test that values are lists of themes."""
-        from src.steerer import DOMAIN_BRIDGE_MAP
+        from machine_poi.steerer import DOMAIN_BRIDGE_MAP
         
         for keyword, themes in DOMAIN_BRIDGE_MAP.items():
             assert isinstance(themes, list)
@@ -105,7 +105,7 @@ class TestQuranSteererInit:
 
     def test_init_defaults(self):
         """Test initialization with defaults."""
-        from src.steerer import QuranSteerer
+        from machine_poi.steerer import QuranSteerer
         
         steerer = QuranSteerer()
         
@@ -117,7 +117,7 @@ class TestQuranSteererInit:
 
     def test_init_custom_models(self):
         """Test initialization with custom models."""
-        from src.steerer import QuranSteerer
+        from machine_poi.steerer import QuranSteerer
         
         steerer = QuranSteerer(
             llm_model="qwen2.5-0.5b",
@@ -129,7 +129,7 @@ class TestQuranSteererInit:
 
     def test_init_with_quantization(self):
         """Test initialization with quantization option."""
-        from src.steerer import QuranSteerer
+        from machine_poi.steerer import QuranSteerer
         
         steerer = QuranSteerer(llm_quantization="4bit")
         
@@ -137,7 +137,7 @@ class TestQuranSteererInit:
 
     def test_init_custom_quran_path(self, sample_quran_path):
         """Test initialization with custom Quran path."""
-        from src.steerer import QuranSteerer
+        from machine_poi.steerer import QuranSteerer
         
         steerer = QuranSteerer(quran_path=sample_quran_path)
         
@@ -149,7 +149,7 @@ class TestDomainBridging:
 
     def test_generate_domain_bridges_technical(self):
         """Test domain bridging for technical queries."""
-        from src.steerer import QuranSteerer
+        from machine_poi.steerer import QuranSteerer
         
         steerer = QuranSteerer()
         
@@ -165,7 +165,7 @@ class TestDomainBridging:
 
     def test_generate_domain_bridges_emotional(self):
         """Test domain bridging for emotional queries."""
-        from src.steerer import QuranSteerer
+        from machine_poi.steerer import QuranSteerer
         
         steerer = QuranSteerer()
         
@@ -179,7 +179,7 @@ class TestDomainBridging:
 
     def test_generate_domain_bridges_no_match(self):
         """Test domain bridging when no keywords match."""
-        from src.steerer import QuranSteerer
+        from machine_poi.steerer import QuranSteerer
         
         steerer = QuranSteerer()
         
@@ -192,7 +192,7 @@ class TestDomainBridging:
 
     def test_generate_domain_bridges_dedup(self):
         """Test that duplicate bridges are removed."""
-        from src.steerer import QuranSteerer
+        from machine_poi.steerer import QuranSteerer
         
         steerer = QuranSteerer()
         
@@ -207,7 +207,7 @@ class TestDomainBridging:
 
     def test_generate_domain_bridges_without_auto_bridge(self):
         """Test that auto-bridge fallback can be disabled."""
-        from src.steerer import QuranSteerer
+        from machine_poi.steerer import QuranSteerer
         
         steerer = QuranSteerer()
         
@@ -227,14 +227,14 @@ class TestQuranicThemes:
 
     def test_quranic_themes_exists(self):
         """Test that QURANIC_THEMES list exists."""
-        from src.steerer import QURANIC_THEMES
+        from machine_poi.steerer import QURANIC_THEMES
         
         assert isinstance(QURANIC_THEMES, list)
         assert len(QURANIC_THEMES) > 30  # Should have at least 30 themes
 
     def test_quranic_themes_are_strings(self):
         """Test that all themes are non-empty strings."""
-        from src.steerer import QURANIC_THEMES
+        from machine_poi.steerer import QURANIC_THEMES
         
         for theme in QURANIC_THEMES:
             assert isinstance(theme, str)
@@ -247,7 +247,7 @@ class TestComputeDynamicSteering:
     @pytest.fixture
     def mock_steerer_with_models(self, sample_embedding_dim, sample_hidden_dim, sample_num_layers):
         """Create a steerer with mocked models."""
-        from src.steerer import QuranSteerer
+        from machine_poi.steerer import QuranSteerer
         
         steerer = QuranSteerer()
         
@@ -349,9 +349,9 @@ class TestPrepareQuranSteering:
         self, mock_sentence_transformer, sample_embedding_dim, sample_hidden_dim, sample_num_layers
     ):
         """Create steerer with mocked components."""
-        from src.steerer import QuranSteerer
-        from src.quran_embeddings import QuranEmbeddings
-        from src.llm_wrapper import SteeredLLM
+        from machine_poi.steerer import QuranSteerer
+        from machine_poi.quran_embeddings import QuranEmbeddings
+        from machine_poi.llm_wrapper import SteeredLLM
         
         steerer = QuranSteerer()
         
@@ -408,7 +408,7 @@ class TestPrepareThematicSteering:
         self, mock_sentence_transformer, sample_embedding_dim, sample_hidden_dim, sample_num_layers
     ):
         """Create a steerer that's already prepared."""
-        from src.steerer import QuranSteerer
+        from machine_poi.steerer import QuranSteerer
         
         steerer = QuranSteerer()
         
@@ -462,8 +462,8 @@ class TestPrepareQuranPersona:
         self, mock_sentence_transformer, sample_embedding_dim, sample_hidden_dim, sample_num_layers, tmp_path
     ):
         """Create steerer for persona testing."""
-        from src.steerer import QuranSteerer
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.steerer import QuranSteerer
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         steerer = QuranSteerer()
         
@@ -509,7 +509,7 @@ class TestSetSteeringStrength:
 
     def test_set_steering_strength(self):
         """Test setting steering strength."""
-        from src.steerer import QuranSteerer
+        from machine_poi.steerer import QuranSteerer
         
         steerer = QuranSteerer()
         steerer.llm = Mock(spec=SteeredLLM)
@@ -528,7 +528,7 @@ class TestGenerateAndCompare:
     @pytest.fixture
     def generation_steerer(self, sample_hidden_dim, sample_num_layers):
         """Create steerer ready for generation."""
-        from src.steerer import QuranSteerer
+        from machine_poi.steerer import QuranSteerer
         
         steerer = QuranSteerer()
         

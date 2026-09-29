@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "machine-poi"
+dynamic = ["version"]
+description = "Host-side gateway for agent tool actions, plus Quran-derived activation steering research"
+readme = "README.md"
+requires-python = ">=3.10"
+# The guardian (machine_poi.guardian) uses only the standard library.
+dependencies = []
+
+[project.optional-dependencies]
+# Steering, embeddings and vector retrieval.
+research = [
+    "torch>=2.0.0",
+    "transformers>=4.56.0",
+    "sentence-transformers>=2.7.0",
+    "accelerate>=0.30.0",
+    "numpy>=1.24.0",
+    "scipy>=1.11.0",
+    "chromadb>=0.4.0",
+]
+# LightRAG knowledge graph and the Ollama provider.
+graph = [
+    "lightrag-hku>=0.1.0",
+    "networkx>=3.0",
+    "httpx>=0.25.0",
+]
+# Hosted LLM providers for graph entity extraction.
+providers = [
+    "openai>=1.0.0",
+    "google-generativeai>=0.8.0",
+    "httpx>=0.25.0",
+]
+quantization = ["bitsandbytes>=0.43.0"]
+test = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "pytest-xdist>=3.5.0",
+    "ruff",
+]
+all = ["machine-poi[research,graph,providers,quantization]"]
+
+[project.scripts]
+machine-poi = "machine_poi.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "machine_poi.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["machine_poi*"]

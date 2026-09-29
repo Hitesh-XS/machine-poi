@@ -1,8 +1,8 @@
-"""Tests for src/transport_stats.py."""
+"""Tests for machine_poi/transport_stats.py."""
 
 import math
 
-from src.transport_stats import bootstrap_ci, paired_test, sign_permutation_test
+from machine_poi.transport_stats import bootstrap_ci, paired_test, sign_permutation_test
 
 
 def test_bootstrap_ci_single_sample_is_a_point():

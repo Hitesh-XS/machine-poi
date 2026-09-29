@@ -4,7 +4,7 @@ import asyncio
 import json
 import time
 
-from src.guardian import (
+from machine_poi.guardian import (
     ActionScope,
     AuditLog,
     Gateway,

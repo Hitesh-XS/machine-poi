@@ -13,10 +13,7 @@ from typing import Optional, Union, List, Dict, Literal
 import numpy as np
 import torch
 
-# Import config
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import STEERING_DEFAULTS
+from .config import STEERING_DEFAULTS
 
 # Setup module logger
 logger = logging.getLogger("machine_poi.quran_embeddings")

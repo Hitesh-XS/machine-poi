@@ -5,7 +5,8 @@
 [Workspace roadmap](global_workspace_improvement_plan.md)
 
 Status: Phase 0 delivered 2026-09-29; later phases proposed. Reviewed at commit
-`8be027d`. Line numbers in the findings refer to that commit.
+`8be027d`. Paths and line numbers in the findings refer to that commit; Phase 1
+moved `src/` to `machine_poi/`.
 
 This plan covers the whole repository: the guardian gateway, the steering and
 retrieval library, the CLI, the experiments and the engineering setup. It

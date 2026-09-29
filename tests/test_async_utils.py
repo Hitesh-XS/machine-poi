@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
-import main
-from src.async_utils import run_sync
-from src.graph_bridge import GraphBridgeGenerator
+from machine_poi import cli
+from machine_poi.async_utils import run_sync
+from machine_poi.graph_bridge import GraphBridgeGenerator
 
 
 async def current_loop():
@@ -52,9 +52,9 @@ def test_graph_index_initializes_builds_and_finalizes_on_one_loop(monkeypatch):
     steerer.initialize_hybrid_knowledge_base = AsyncMock(side_effect=record)
     steerer.hybrid_kb.build_index = AsyncMock(side_effect=record)
     steerer.hybrid_kb.finalize = AsyncMock(side_effect=record)
-    monkeypatch.setattr(main, "QuranSteerer", Mock(return_value=steerer))
+    monkeypatch.setattr(cli, "QuranSteerer", Mock(return_value=steerer))
     monkeypatch.setattr(
         sys, "argv", ["main.py", "--init-db", "--graph-kb", "--build-graph", "--llm-provider", "ollama"]
     )
-    main.main()
+    cli.main()
     assert len(loops) == 3 and len(set(map(id, loops))) == 1

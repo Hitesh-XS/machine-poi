@@ -5,19 +5,19 @@ from unittest.mock import Mock
 
 import pytest
 
-import main
-from config import LLM_MODELS, STEERING_PRESETS, get_recommended_config
+from machine_poi import cli
+from machine_poi.config import LLM_MODELS, STEERING_PRESETS, get_recommended_config
 
 
 def parse(monkeypatch, *argv):
     monkeypatch.setattr(sys, "argv", ["main.py", *argv])
-    return main.parse_args()
+    return cli.parse_args()
 
 
 def resolve(monkeypatch, *argv):
     args = parse(monkeypatch, *argv)
     config = get_recommended_config(args.llm, args.embedding, intensity=args.preset)
-    return main.resolve_steering(args, config)
+    return cli.resolve_steering(args, config)
 
 
 MODEL = "qwen2.5-0.5b"
@@ -61,9 +61,9 @@ def run_main(monkeypatch, *argv):
     steerer = Mock()
     steerer.compare.return_value = ("steered", "baseline")
     factory = Mock(return_value=steerer)
-    monkeypatch.setattr(main, "QuranSteerer", factory)
+    monkeypatch.setattr(cli, "QuranSteerer", factory)
     monkeypatch.setattr(sys, "argv", ["main.py", *argv])
-    main.main()
+    cli.main()
     return factory, steerer
 
 
@@ -84,4 +84,4 @@ def test_theme_skips_discarded_mean_vector_pass(monkeypatch):
 def test_invalid_coefficient_fails_before_loading_models(monkeypatch):
     with pytest.raises(SystemExit, match="Invalid steering configuration"):
         run_main(monkeypatch, "--llm", MODEL, "--coefficient", "5", "--prompt", "q")
-    assert main.QuranSteerer.call_count == 0
+    assert cli.QuranSteerer.call_count == 0

@@ -10,11 +10,11 @@ import pytest
 import torch
 from torch import nn
 
-from src.llm_wrapper import MODEL_CONFIGS, ActivationHook, SteeredLLM
-from src.knowledge_base import QuranKnowledgeBase
-from src.steerer import InvalidConfigError, QuranSteerer, SteeringConfig
-from src.steering_cache import load_vectors, save_vectors
-from src.workspace_diagnostics import summarize_steering_hooks
+from machine_poi.llm_wrapper import MODEL_CONFIGS, ActivationHook, SteeredLLM
+from machine_poi.knowledge_base import QuranKnowledgeBase
+from machine_poi.steerer import InvalidConfigError, QuranSteerer, SteeringConfig
+from machine_poi.steering_cache import load_vectors, save_vectors
+from machine_poi.workspace_diagnostics import summarize_steering_hooks
 
 
 def tiny_llm():
@@ -212,9 +212,9 @@ def test_pickle_cache_rejected_without_executing(tmp_path):
 def test_unsafe_model_code_requires_pin_and_is_off_by_default():
     llm = tiny_llm()
     with patch(
-        "src.llm_wrapper.AutoModelForCausalLM.from_pretrained", return_value=llm.model
+        "machine_poi.llm_wrapper.AutoModelForCausalLM.from_pretrained", return_value=llm.model
     ) as model:
-        with patch("src.llm_wrapper.AutoTokenizer.from_pretrained") as tokenizer:
+        with patch("machine_poi.llm_wrapper.AutoTokenizer.from_pretrained") as tokenizer:
             llm.load_model()
     assert model.call_args.kwargs["trust_remote_code"] is False
     assert tokenizer.call_args.kwargs["trust_remote_code"] is False

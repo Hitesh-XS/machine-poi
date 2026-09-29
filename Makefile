@@ -30,7 +30,7 @@ test-all:
 
 # Run with coverage
 test-cov:
-	python -m pytest -m "not slow and not integration" --cov=src --cov-report=term-missing --cov-report=html
+	python -m pytest -m "not slow and not integration" --cov=machine_poi --cov-report=term-missing --cov-report=html
 
 # Run tests in parallel (faster)
 test-parallel:
@@ -52,13 +52,13 @@ test-kb:
 clean:
 	rm -rf .pytest_cache
 	rm -rf __pycache__
-	rm -rf src/__pycache__
+	rm -rf machine_poi/__pycache__
 	rm -rf tests/__pycache__
 	rm -rf .coverage
 	rm -rf htmlcov
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 
-# Lint with the rules in ruff.toml (ruff is pinned in requirements-test.txt)
+# Lint with the rules in ruff.toml (ruff is pinned in ci-constraints.txt)
 lint:
 	python -m ruff check .

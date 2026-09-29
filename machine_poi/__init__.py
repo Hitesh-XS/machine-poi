@@ -1,11 +1,10 @@
 """
-Machine-POI: LLM Steering using Quran Text Embeddings.
+Machine-POI: a host-side gateway for agent tool actions (``machine_poi.guardian``)
+and a research library for Quran-derived activation steering and retrieval.
 
-This package implements activation steering for small language models using
-text embeddings derived from Quranic verses.
-
-Public classes are loaded lazily so lightweight imports such as
-``src.workspace_diagnostics`` do not require optional runtime dependencies for
+The guardian uses only the standard library; the research modules need the
+``research`` extra. Public classes are loaded lazily so lightweight imports such as
+``machine_poi.workspace_diagnostics`` do not require optional runtime dependencies for
 the full retrieval and model-loading stack.
 """
 

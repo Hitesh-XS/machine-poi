@@ -5,7 +5,8 @@
 
 ## What runs now
 
-Machine-POI now includes a standard-library-only action gateway in `src/guardian/`.
+Machine-POI now includes a standard-library-only action gateway in `machine_poi/guardian/`.
+Install a checkout with `pip install /path/to/machine-poi`; the base package has no dependencies.
 It checks structured proposals against host-issued grants, pauses actions for
 operator review, binds approvals to stored arguments and resolved tool scope,
 reserves budgets atomically, prevents replay, stops runs and descendants, and
@@ -48,7 +49,7 @@ in for authenticated host context; they must never be copied from an agent reque
 import asyncio
 import time
 
-from src.guardian import ActionScope, Gateway, ProposedAction, TaskGrant, ToolSpec
+from machine_poi.guardian import ActionScope, Gateway, ProposedAction, TaskGrant, ToolSpec
 
 effects = []
 
@@ -113,7 +114,7 @@ The schema rejects unknown top-level arguments and exact-type mismatches. Tool
 adapters must validate nested objects and business rules. Scopes use exact string
 identifiers; empty sets are not wildcards. `TaskGrant.goal` documents intent but
 is not semantically evaluated by policy. The gateway is an importable component,
-not an authenticated HTTP service or an automatic wrapper around `main.py`.
+not an authenticated HTTP service or an automatic wrapper around the research CLI.
 
 ## Host integration contract
 

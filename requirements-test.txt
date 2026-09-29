@@ -1,9 +1,0 @@
-# CPU test environment; no model downloads or API credentials are required.
-# Install torch==2.8.0 from https://download.pytorch.org/whl/cpu separately.
-pytest==9.1.1
-pytest-cov==7.1.0
-ruff==0.16.9
-transformers==4.57.6
-sentence-transformers==5.2.0
-chromadb==1.5.5
-lightrag-hku==1.4.11

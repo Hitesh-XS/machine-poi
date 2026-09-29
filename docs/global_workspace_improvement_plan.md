@@ -23,7 +23,7 @@ behavioral evidence.
 
 Machine-POI should offer a `workspace` layer distribution that emphasizes intermediate layers where reusable internal representations are most likely to live. This avoids treating all layers as equally suitable intervention points.
 
-**Status:** Implemented as `select_workspace_layers()` and `layer_distribution_scale()` in `src/steerer.py`, with support in both static and dynamic steering application paths.
+**Status:** Implemented as `select_workspace_layers()` and `layer_distribution_scale()` in `machine_poi/steerer.py`, with support in both static and dynamic steering application paths.
 
 ### 2. Add workspace diagnostics
 
@@ -35,7 +35,7 @@ Steering should expose lightweight metrics that make internal perturbations insp
 - mean projection magnitude,
 - relative perturbation size.
 
-**Status:** Implemented as `src/workspace_diagnostics.py` with tensor-only unit tests. Relative perturbation now uses the actual update for add, blend, replace and clamp. After high-level `generate` or `generate_with_graph`, read `QuranSteerer.last_run_diagnostics`: session restoration clears captured tensors. Low-level callers can use `SteeredLLM.get_steering_diagnostics()` while their enabled hooks still hold the captured activations. These summaries do not certify behavior or permissions.
+**Status:** Implemented as `machine_poi/workspace_diagnostics.py` with tensor-only unit tests. Relative perturbation now uses the actual update for add, blend, replace and clamp. After high-level `generate` or `generate_with_graph`, read `QuranSteerer.last_run_diagnostics`: session restoration clears captured tensors. Low-level callers can use `SteeredLLM.get_steering_diagnostics()` while their enabled hooks still hold the captured activations. These summaries do not certify behavior or permissions.
 
 ### 2b. Add attention-transport (curvature) diagnostics
 
@@ -47,7 +47,7 @@ Beyond pointwise perturbation metrics, steering should be auditable for whether 
 
 Comparing these per-head profiles with steering enabled vs. disabled measures changes in the constructed transport diagnostic. Interpreting such a change as useful context routing requires output/task controls: the [committed results](../experiments/results/README.md) include collapse and persona spillover. A standalone manifold/transport testbed lives in `experiments/gpt_on_manifolds_v4.py`; its presence does not independently validate the cited research interpretation.
 
-**Status:** Implemented as `connection_bivectors()`, `summarize_attention_transport()`, `summarize_attention_transport_heads()`, and `pooled_non_abelian_ratio()` in `src/workspace_diagnostics.py` with tensor-only unit tests. Runtime integration: `SteeredLLM.get_attention_transport_diagnostics(prompt)` captures per-head attention weights and query/value projections in one forward pass (grouped-query attention supported); wrap it in `steering_disabled()` to obtain the unsteered baseline.
+**Status:** Implemented as `connection_bivectors()`, `summarize_attention_transport()`, `summarize_attention_transport_heads()`, and `pooled_non_abelian_ratio()` in `machine_poi/workspace_diagnostics.py` with tensor-only unit tests. Runtime integration: `SteeredLLM.get_attention_transport_diagnostics(prompt)` captures per-head attention weights and query/value projections in one forward pass (grouped-query attention supported); wrap it in `steering_disabled()` to obtain the unsteered baseline.
 
 ### 3. Prefer activation-derived steering vectors
 

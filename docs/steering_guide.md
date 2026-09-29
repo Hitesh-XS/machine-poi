@@ -11,7 +11,7 @@ pass through the guardian.
 ## Generate with mean-activation steering
 
 ```python
-from src import QuranSteerer
+from machine_poi import QuranSteerer
 
 steerer = QuranSteerer(
     llm_model="qwen2.5-0.5b",
@@ -91,14 +91,14 @@ Use the async API for graph-enhanced generation. This standalone example expects
 `GRAPH_MODEL` to name a model accessible to the configured OpenAI account and
 `OPENAI_API_KEY` to be available to its client. Indexing can make many provider
 calls. Ollama and Gemini adapter factories are also available in
-`src/llm_adapters.py`; configure their model, endpoint and credentials for your host.
+`machine_poi/llm_adapters.py`; configure their model, endpoint and credentials for your host.
 
 ```python
 import asyncio
 import os
 
-from src import QuranSteerer
-from src.llm_adapters import create_openai_adapter
+from machine_poi import QuranSteerer
+from machine_poi.llm_adapters import create_openai_adapter
 
 async def main():
     steerer = QuranSteerer(

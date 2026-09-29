@@ -1,5 +1,5 @@
 """
-Tests for src/llm_wrapper.py
+Tests for machine_poi/llm_wrapper.py
 
 Tests for:
 - ActivationHook (all injection modes)
@@ -19,7 +19,7 @@ class TestActivationHookInit:
 
     def test_init_defaults(self, sample_steering_vector):
         """Test initialization with default parameters."""
-        from src.llm_wrapper import ActivationHook
+        from machine_poi.llm_wrapper import ActivationHook
         
         hook = ActivationHook(layer_idx=12)
         
@@ -31,7 +31,7 @@ class TestActivationHookInit:
 
     def test_init_with_steering_vector(self, sample_steering_vector):
         """Test initialization with steering vector."""
-        from src.llm_wrapper import ActivationHook
+        from machine_poi.llm_wrapper import ActivationHook
         
         hook = ActivationHook(
             layer_idx=12,
@@ -50,7 +50,7 @@ class TestActivationHookInjection:
 
     def test_add_mode(self, sample_steering_vector, sample_hidden_states):
         """Test 'add' injection mode."""
-        from src.llm_wrapper import ActivationHook
+        from machine_poi.llm_wrapper import ActivationHook
         
         hook = ActivationHook(
             layer_idx=12,
@@ -69,7 +69,7 @@ class TestActivationHookInjection:
 
     def test_blend_mode(self, sample_steering_vector, sample_hidden_states):
         """Test 'blend' injection mode."""
-        from src.llm_wrapper import ActivationHook
+        from machine_poi.llm_wrapper import ActivationHook
         
         hook = ActivationHook(
             layer_idx=12,
@@ -88,7 +88,7 @@ class TestActivationHookInjection:
 
     def test_replace_mode(self, sample_steering_vector, sample_hidden_states):
         """Test 'replace' injection mode."""
-        from src.llm_wrapper import ActivationHook
+        from machine_poi.llm_wrapper import ActivationHook
         
         hook = ActivationHook(
             layer_idx=12,
@@ -106,7 +106,7 @@ class TestActivationHookInjection:
 
     def test_clamp_mode(self, sample_steering_vector, sample_hidden_states):
         """Test 'clamp' injection mode."""
-        from src.llm_wrapper import ActivationHook
+        from machine_poi.llm_wrapper import ActivationHook
         
         hook = ActivationHook(
             layer_idx=12,
@@ -129,7 +129,7 @@ class TestActivationHookInjection:
 
     def test_clamp_removes_existing_projection(self, sample_hidden_dim):
         """Test that clamp mode properly removes existing projection."""
-        from src.llm_wrapper import ActivationHook
+        from machine_poi.llm_wrapper import ActivationHook
         
         torch.manual_seed(42)
         
@@ -168,7 +168,7 @@ class TestActivationHookBehavior:
 
     def test_disabled_hook_passthrough(self, sample_steering_vector, sample_hidden_states):
         """Test that disabled hook passes through unchanged."""
-        from src.llm_wrapper import ActivationHook
+        from machine_poi.llm_wrapper import ActivationHook
         
         hook = ActivationHook(
             layer_idx=12,
@@ -184,7 +184,7 @@ class TestActivationHookBehavior:
 
     def test_enable_after_disable(self, sample_steering_vector, sample_hidden_states):
         """Test re-enabling hook after disable."""
-        from src.llm_wrapper import ActivationHook
+        from machine_poi.llm_wrapper import ActivationHook
         
         hook = ActivationHook(
             layer_idx=12,
@@ -205,7 +205,7 @@ class TestActivationHookBehavior:
 
     def test_no_steering_vector_passthrough(self, sample_hidden_states):
         """Test that hook with no steering vector passes through."""
-        from src.llm_wrapper import ActivationHook
+        from machine_poi.llm_wrapper import ActivationHook
         
         hook = ActivationHook(layer_idx=12)  # No steering vector
         
@@ -216,7 +216,7 @@ class TestActivationHookBehavior:
 
     def test_captures_activation(self, sample_steering_vector, sample_hidden_states):
         """Test that hook captures activations."""
-        from src.llm_wrapper import ActivationHook
+        from machine_poi.llm_wrapper import ActivationHook
         
         hook = ActivationHook(layer_idx=12)
         hook(None, None, sample_hidden_states)
@@ -228,7 +228,7 @@ class TestActivationHookBehavior:
 
     def test_set_steering_vector(self, sample_hidden_dim):
         """Test updating steering vector."""
-        from src.llm_wrapper import ActivationHook
+        from machine_poi.llm_wrapper import ActivationHook
         
         hook = ActivationHook(layer_idx=12)
         assert hook.steering_vector is None
@@ -245,7 +245,7 @@ class TestActivationHookTupleOutput:
 
     def test_tuple_output_preserved(self, sample_steering_vector, sample_hidden_states):
         """Test that tuple outputs are preserved."""
-        from src.llm_wrapper import ActivationHook
+        from machine_poi.llm_wrapper import ActivationHook
         
         hook = ActivationHook(
             layer_idx=12,
@@ -270,7 +270,7 @@ class TestModelConfigDetection:
 
     def test_get_model_config_qwen(self):
         """Test config detection for Qwen models."""
-        from src.llm_wrapper import get_model_config
+        from machine_poi.llm_wrapper import get_model_config
         
         config = get_model_config("Qwen/Qwen2.5-0.5B-Instruct")
         
@@ -279,7 +279,7 @@ class TestModelConfigDetection:
 
     def test_get_model_config_llama(self):
         """Test config detection for LLaMA models."""
-        from src.llm_wrapper import get_model_config
+        from machine_poi.llm_wrapper import get_model_config
         
         config = get_model_config("meta-llama/Llama-2-7b")
         
@@ -287,7 +287,7 @@ class TestModelConfigDetection:
 
     def test_get_model_config_unknown_defaults_to_llama(self):
         """Test that unknown models default to llama config."""
-        from src.llm_wrapper import get_model_config
+        from machine_poi.llm_wrapper import get_model_config
         
         config = get_model_config("totally-unknown-model")
         
@@ -300,7 +300,7 @@ class TestSteeredLLMInit:
 
     def test_init_defaults(self):
         """Test initialization with defaults."""
-        from src.llm_wrapper import SteeredLLM
+        from machine_poi.llm_wrapper import SteeredLLM
         
         llm = SteeredLLM()
         
@@ -310,7 +310,7 @@ class TestSteeredLLMInit:
 
     def test_init_custom_model(self):
         """Test initialization with custom model."""
-        from src.llm_wrapper import SteeredLLM
+        from machine_poi.llm_wrapper import SteeredLLM
         
         llm = SteeredLLM(model_name="qwen2.5-0.5b")
         
@@ -319,7 +319,7 @@ class TestSteeredLLMInit:
 
     def test_init_quantization_options(self):
         """Test quantization options."""
-        from src.llm_wrapper import SteeredLLM
+        from machine_poi.llm_wrapper import SteeredLLM
         
         llm_8bit = SteeredLLM(load_in_8bit=True)
         llm_4bit = SteeredLLM(load_in_4bit=True)
@@ -329,7 +329,7 @@ class TestSteeredLLMInit:
 
     def test_supported_models_list(self):
         """Test that supported models are defined."""
-        from src.llm_wrapper import SteeredLLM
+        from machine_poi.llm_wrapper import SteeredLLM
         
         expected_models = [
             "deepseek-r1-1.5b",
@@ -351,7 +351,7 @@ class TestSteeredLLMProperties:
         self, mock_llm_model, mock_tokenizer, sample_hidden_dim
     ):
         """Test hidden_size property."""
-        from src.llm_wrapper import SteeredLLM
+        from machine_poi.llm_wrapper import SteeredLLM
         
         llm = SteeredLLM()
         llm.model = mock_llm_model
@@ -364,7 +364,7 @@ class TestSteeredLLMProperties:
         self, mock_llm_model, mock_tokenizer, sample_num_layers
     ):
         """Test num_layers property."""
-        from src.llm_wrapper import SteeredLLM
+        from machine_poi.llm_wrapper import SteeredLLM
         
         llm = SteeredLLM()
         llm.model = mock_llm_model
@@ -375,7 +375,7 @@ class TestSteeredLLMProperties:
 
     def test_properties_raise_without_model(self):
         """Test that properties raise when model not loaded."""
-        from src.llm_wrapper import SteeredLLM
+        from machine_poi.llm_wrapper import SteeredLLM
         
         llm = SteeredLLM()
         
@@ -384,7 +384,7 @@ class TestSteeredLLMProperties:
 
     def test_get_steering_diagnostics_filters_disabled_hooks(self):
         """Test that diagnostics only include enabled steering hooks."""
-        from src.llm_wrapper import SteeredLLM
+        from machine_poi.llm_wrapper import SteeredLLM
 
         llm = SteeredLLM(model_name="qwen2.5-0.5b", device="cpu")
         llm.hooks = {
@@ -414,7 +414,7 @@ class TestSteeredLLMModelLoading:
     @pytest.mark.integration
     def test_load_small_model(self):
         """Test loading a small model."""
-        from src.llm_wrapper import SteeredLLM
+        from machine_poi.llm_wrapper import SteeredLLM
         
         llm = SteeredLLM(model_name="qwen2.5-0.5b", device="cpu")
         llm.load_model()
@@ -430,7 +430,7 @@ class TestDeviceDetection:
 
     def test_device_auto_cpu(self):
         """Test device defaults to CPU when no GPU."""
-        from src.llm_wrapper import SteeredLLM
+        from machine_poi.llm_wrapper import SteeredLLM
         
         with patch("torch.cuda.is_available", return_value=False):
             with patch.object(torch.backends, "mps", create=True) as mock_mps:
@@ -441,7 +441,7 @@ class TestDeviceDetection:
 
     def test_device_explicit(self):
         """Test explicit device setting."""
-        from src.llm_wrapper import SteeredLLM
+        from machine_poi.llm_wrapper import SteeredLLM
         
         llm = SteeredLLM(device="cpu")
         assert llm.device == "cpu"
@@ -451,18 +451,18 @@ class TestKvShareSourceMap:
     """Test cross-layer KV-sharing source resolution (Gemma 4 style)."""
 
     def test_no_shared_layers(self):
-        from src.llm_wrapper import kv_share_source_map
+        from machine_poi.llm_wrapper import kv_share_source_map
 
         assert kv_share_source_map(["full_attention"] * 4, 4, 0) == {}
 
     def test_all_layers_shared_is_degenerate(self):
-        from src.llm_wrapper import kv_share_source_map
+        from machine_poi.llm_wrapper import kv_share_source_map
 
         # first_shared == 0: nothing can provide KV states
         assert kv_share_source_map(["full_attention"] * 4, 4, 4) == {}
 
     def test_gemma4_e2b_layout(self):
-        from src.llm_wrapper import kv_share_source_map
+        from machine_poi.llm_wrapper import kv_share_source_map
 
         # 35 layers, full attention every 5th layer starting at 4,
         # last 20 layers share KV (google/gemma-4-E2B-it).
@@ -481,7 +481,7 @@ class TestKvShareSourceMap:
             assert sources[idx] == 13
 
     def test_type_missing_from_prefix_is_skipped(self):
-        from src.llm_wrapper import kv_share_source_map
+        from machine_poi.llm_wrapper import kv_share_source_map
 
         # A shared layer whose type never occurs before the share point
         # has no source and is omitted.
@@ -498,7 +498,7 @@ class TestKvSharedLayerDiagnostics:
         """SteeredLLM over a tiny two-layer model whose layer 1 has no v_proj."""
         from types import SimpleNamespace
 
-        from src.llm_wrapper import MODEL_CONFIGS, SteeredLLM
+        from machine_poi.llm_wrapper import MODEL_CONFIGS, SteeredLLM
 
         torch.manual_seed(0)
 
@@ -556,7 +556,7 @@ class TestKvSharedLayerDiagnostics:
         return llm
 
     def test_shared_layer_uses_source_layer_values(self):
-        from src.workspace_diagnostics import summarize_attention_transport_heads
+        from machine_poi.workspace_diagnostics import summarize_attention_transport_heads
 
         llm = self._build_llm()
         assert llm._kv_share_sources() == {1: 0}

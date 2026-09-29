@@ -7,10 +7,10 @@ from unittest.mock import Mock
 import pytest
 import torch
 
-import main
-from src.knowledge_base import QuranKnowledgeBase
-from src.llm_wrapper import SteeredLLM
-from src.steerer import QuranSteerer
+from machine_poi import cli
+from machine_poi.knowledge_base import QuranKnowledgeBase
+from machine_poi.llm_wrapper import SteeredLLM
+from machine_poi.steerer import QuranSteerer
 
 
 class FakeTokenizer:
@@ -103,11 +103,11 @@ def test_cli_comparisons_pass_retrieval_and_sampling_options(mode, monkeypatch):
     steerer = Mock()
     steerer.compare.return_value = ("s", "b")
     if mode == "prompt":
-        main.run_single_prompt(steerer, "q", args)
+        cli.run_single_prompt(steerer, "q", args)
     else:
         inputs = iter(["q", "quit"])
         monkeypatch.setattr("builtins.input", lambda _: next(inputs))
-        main.run_interactive(steerer, args)
+        cli.run_interactive(steerer, args)
     steerer.compare.assert_called_once_with(
         "q", max_new_tokens=12, temperature=0.2, mra_mode=True, reasoning_mode=False
     )

@@ -1,11 +1,11 @@
 # Machine-POI: plan for containing out-of-scope agent actions
 
-Status: reference runtime implemented, with live-host validation and rollout pending (2026-09-29). The findings below describe the reviewed baseline at commit 7cfa46657acacb8cbb5cb70e673e0cb3c30b1f9b; their line numbers refer to that commit. See [integration and migration instructions](guardian_integration.md) for the implemented API and deployment requirements.
+Status: reference runtime implemented, with live-host validation and rollout pending (2026-09-29). The findings below describe the reviewed baseline at commit 7cfa46657acacb8cbb5cb70e673e0cb3c30b1f9b; their paths use that commit's `src/` layout (now `machine_poi/`) and their line numbers refer to that commit. See [integration and migration instructions](guardian_integration.md) for the implemented API and deployment requirements.
 
 Navigation: [architecture](architecture.md), [steering usage](steering_guide.md),
 [validation evidence](testing.md). The contracts and state transitions below
 describe the design target; current API fields and automatic behavior are defined
-by `src/guardian/` and the integration guide.
+by `machine_poi/guardian/` and the integration guide.
 
 ## Execution status
 
@@ -13,7 +13,7 @@ by `src/guardian/` and the integration guide.
 | --- | --- | --- |
 | 0. Boundary and threat model | Mock write/send tools; JSON proposal worker; host-owned grants, identities and executors in `examples/guarded_agent/`. | Inventory and isolate a real host. The process demo shares an OS account and is not a sandbox. |
 | 1. Research runtime | Serialized inference and hook mutation, exact session restoration, duplicate-handle replacement, finite vector/config validation, corrected clamp strength and diagnostics, remote code off by default with pinned opt-in, numeric-only identity-checked caches, bounded quoted retrieval with dynamic steering opt-in. | Live model regression and steering efficacy studies; no protection claim from steering. |
-| 2. Deterministic gateway | Standard-library `src/guardian/` contracts, trusted adapter scopes, exact policy checks, shared ancestor budgets, replay prevention, dispatch-time revalidation and redacted hash-chained audit. | Authenticated transport, durable/shared authorization state, credential and OS enforcement belong to the deployment. |
+| 2. Deterministic gateway | Standard-library `machine_poi/guardian/` contracts, trusted adapter scopes, exact policy checks, shared ancestor budgets, replay prevention, dispatch-time revalidation and redacted hash-chained audit. | Authenticated transport, durable/shared authorization state, credential and OS enforcement belong to the deployment. |
 | 3. Pause, stop and review | Bound pending actions, operator-only review, approval expiry, queued/in-flight cooperative cancellation, descendant revocation and fail-closed host callback handling. | Real credential revocation and remote-effect reconciliation drills. |
 | 4. Adversarial evaluation | Gateway/runtime regression tests, mock process demo, 12 synthetic action-proposal fixtures and a reproducible report in `evals/rogue_agent/results.json`; CI workflow added. | Held-out model-generated traces, baseline/steering/gateway/combined A/B runs, production task success and containment-time measurements. |
 | 5. Shadow and staged enforcement | Non-executing preview API and deployment profile checklist. | A named host, tools, owner and isolation profile are needed before shadow/canary rollout. |
@@ -24,7 +24,7 @@ Local validation on Python 3.12.14: **197 tests passed, 4 slow/integration tests
 
 ```bash
 python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-python -m pip install -r requirements-test.txt
+python -m pip install -c ci-constraints.txt -e ".[research,graph,test]"
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -m pytest -q -m 'not slow and not integration'
 ```
 

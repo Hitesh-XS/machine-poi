@@ -24,8 +24,8 @@ import argparse
 import torch
 import gc
 import time
-from src import QuranSteerer
-from config import LLM_MODELS, EMBEDDING_MODELS
+from machine_poi import QuranSteerer
+from machine_poi.config import LLM_MODELS, EMBEDDING_MODELS
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -154,7 +154,7 @@ def list_models():
 
 def compare_embeddings(args):
     """Compare embedding models on query-to-Quran retrieval."""
-    from src.quran_embeddings import QuranEmbeddings
+    from machine_poi.quran_embeddings import QuranEmbeddings
     import numpy as np
 
     print(f"\n{'='*70}")
@@ -304,7 +304,7 @@ def main():
         
         # Show reasoning config if applicable
         if args.reasoning and model_name in ["deepseek-r1-1.5b", "qwen3-0.6b", "phi4-mini"]:
-            from src.llm_wrapper import SteeredLLM
+            from machine_poi.llm_wrapper import SteeredLLM
             config = SteeredLLM.REASONING_CONFIGS.get(model_name, {})
             print(f"  Reasoning: {config.get('mode', 'generic')} mode")
             print(f"  Temperature: {config.get('temperature', 0.6)}")

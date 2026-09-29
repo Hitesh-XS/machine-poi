@@ -1,5 +1,5 @@
 """
-Tests for src/quran_embeddings.py
+Tests for machine_poi/quran_embeddings.py
 
 Tests the QuranEmbeddings class for:
 - Text loading and chunking
@@ -17,7 +17,7 @@ class TestQuranEmbeddingsInit:
 
     def test_init_with_defaults(self):
         """Test initialization with default parameters."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings()
         
@@ -28,7 +28,7 @@ class TestQuranEmbeddingsInit:
 
     def test_init_with_custom_model(self):
         """Test initialization with custom model name."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings(model_name="multilingual-e5")
         
@@ -36,7 +36,7 @@ class TestQuranEmbeddingsInit:
 
     def test_init_device_selection_cpu(self):
         """Test explicit CPU device selection."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings(device="cpu")
         
@@ -44,7 +44,7 @@ class TestQuranEmbeddingsInit:
 
     def test_supported_models_mapping(self):
         """Test that supported models are correctly mapped."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         # Match current SUPPORTED_MODELS in quran_embeddings.py
         expected_models = ["bge-m3", "qwen-embedding", "multilingual-e5", "paraphrase-mpnet"]
@@ -58,7 +58,7 @@ class TestTextLoading:
 
     def test_load_quran_text_verse_chunking(self, sample_quran_path):
         """Test loading text with verse-level chunking."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings()
         chunks = embedder.load_quran_text(sample_quran_path, chunk_by="verse")
@@ -69,7 +69,7 @@ class TestTextLoading:
 
     def test_load_quran_text_paragraph_chunking(self, sample_quran_path):
         """Test loading text with paragraph-level chunking."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings()
         chunks = embedder.load_quran_text(sample_quran_path, chunk_by="paragraph")
@@ -80,7 +80,7 @@ class TestTextLoading:
 
     def test_load_quran_text_surah_chunking(self, sample_quran_path):
         """Test loading text with surah-level chunking."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings()
         chunks = embedder.load_quran_text(sample_quran_path, chunk_by="surah")
@@ -93,7 +93,7 @@ class TestTextLoading:
 
     def test_load_quran_text_min_length_filter(self, sample_quran_path):
         """Test that short chunks are filtered out."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings()
         
@@ -109,7 +109,7 @@ class TestTextLoading:
 
     def test_load_quran_text_file_not_found(self, tmp_path):
         """Test handling of missing file - falls back to default al-quran.txt."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings()
         nonexistent = tmp_path / "nonexistent.txt"
@@ -129,7 +129,7 @@ class TestEmbeddingCreation:
         self, mock_sentence_transformer, sample_embedding_dim
     ):
         """Test that embeddings have correct shape."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings()
         embedder.model = mock_sentence_transformer
@@ -143,7 +143,7 @@ class TestEmbeddingCreation:
         self, mock_sentence_transformer, sample_embedding_dim
     ):
         """Test that embeddings are L2 normalized."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings()
         embedder.model = mock_sentence_transformer
@@ -159,7 +159,7 @@ class TestEmbeddingCreation:
         self, mock_sentence_transformer, sample_quran_path
     ):
         """Test that create_quran_embeddings returns proper dict."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings()
         embedder.model = mock_sentence_transformer
@@ -179,7 +179,7 @@ class TestEmbeddingCreation:
         self, mock_sentence_transformer, sample_quran_path
     ):
         """Test that mean embedding is normalized."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings()
         embedder.model = mock_sentence_transformer
@@ -200,7 +200,7 @@ class TestCaching:
         self, mock_sentence_transformer, sample_quran_path, temp_cache_dir
     ):
         """Test that embeddings can be saved and loaded."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings()
         embedder.model = mock_sentence_transformer
@@ -227,7 +227,7 @@ class TestCaching:
         self, mock_sentence_transformer, sample_quran_path, temp_cache_dir
     ):
         """Test that texts are saved in a separate file."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings()
         embedder.model = mock_sentence_transformer
@@ -248,7 +248,7 @@ class TestSemanticClustering:
 
     def test_get_semantic_clusters(self, sample_embeddings):
         """Test that clustering returns correct structure."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings()
         n_clusters = 3
@@ -263,7 +263,7 @@ class TestSemanticClustering:
 
     def test_cluster_centers_normalized(self, sample_embeddings):
         """Test that cluster centers are normalized."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings()
         result = embedder.get_semantic_clusters(sample_embeddings, n_clusters=3)
@@ -280,7 +280,7 @@ class TestModelLoading:
     @pytest.mark.integration
     def test_load_model_bge_m3(self):
         """Test loading the bge-m3 model."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings(model_name="bge-m3", device="cpu")
         embedder.load_model()
@@ -291,7 +291,7 @@ class TestModelLoading:
     @pytest.mark.integration
     def test_encode_with_real_model(self):
         """Test encoding with a real model."""
-        from src.quran_embeddings import QuranEmbeddings
+        from machine_poi.quran_embeddings import QuranEmbeddings
         
         embedder = QuranEmbeddings(model_name="bge-m3", device="cpu")
         embedder.load_model()

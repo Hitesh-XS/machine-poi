@@ -5,7 +5,7 @@ from dataclasses import replace
 
 import pytest
 
-from src.guardian import (
+from machine_poi.guardian import (
     ActionScope,
     AuditLog,
     Gateway,

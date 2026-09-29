@@ -49,8 +49,8 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.llm_wrapper import SteeredLLM
-from src.transport_stats import paired_test
+from machine_poi.llm_wrapper import SteeredLLM
+from machine_poi.transport_stats import paired_test
 from experiments.steered_vs_baseline_transport import (
     DEFAULT_PROMPTS,
     NEUTRAL_SENTENCES,
