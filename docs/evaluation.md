@@ -18,6 +18,11 @@ and summary), `<name>.md` (the tables) and a blinded rating sheet with its key.
 The vector index and the ARC-Easy download go to `.eval_work/`, which is not
 committed. `--limit N` runs the first N prompts only, for smoke tests.
 
+When the working tree is clean, each finished condition is also saved to
+`.eval_work/<name>.checkpoint.json`. Rerunning the same spec on the same commit
+and prompts resumes from it after an interruption, and the result lists the
+resumed conditions in `resumed_conditions`. A dirty tree never checkpoints.
+
 ## Spec
 
 A JSON or YAML file. Everything except `name` and `conditions` has a default

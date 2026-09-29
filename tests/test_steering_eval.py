@@ -128,6 +128,33 @@ def test_harness_runs_every_condition_and_summarizes(harness, steerer, tmp_path)
     assert "condition" not in rows[0]  # blinded
 
 
+def test_interrupted_runs_resume_from_the_checkpoint(harness, steerer, tmp_path):
+    spec = make_spec(harness, conditions=[
+        {"name": "baseline"},
+        {"name": "centered_r0.1", "recipe": "centered", "dose_ratio": 0.1},
+        {"name": "rag_centered_r0.1", "recipe": "centered", "dose_ratio": 0.1, "rag": True},
+    ])
+    final_prompts = {p["id"]: f"the quran {p['text']}" for p in PROMPTS}
+    checkpoint = tmp_path / "run.checkpoint.json"
+    key = harness.checkpoint_key(spec, PROMPTS, "abc123")
+    options = dict(arc_items=ARC, final_prompts=final_prompts, log=lambda *_: None,
+                   checkpoint=checkpoint, resume_key=key)
+    first = harness.run_evaluation(steerer, spec, PROMPTS, **options)
+    assert first["resumed_conditions"] == [] and checkpoint.exists()
+
+    steerer.generate = Mock(side_effect=AssertionError("should not regenerate"))
+    second = harness.run_evaluation(steerer, spec, PROMPTS, **options)
+    assert second["resumed_conditions"] == [c["name"] for c in spec["conditions"]]
+    assert [r["output"] for r in second["records"]] == [r["output"] for r in first["records"]]
+    assert second["capability"] == first["capability"]
+    assert second["transport"] == first["transport"]
+
+    # A different commit (or spec, or prompt set) never resumes.
+    other = dict(options, resume_key=harness.checkpoint_key(spec, PROMPTS, "def456"))
+    with pytest.raises(AssertionError, match="regenerate"):
+        harness.run_evaluation(steerer, spec, PROMPTS, **other)
+
+
 def test_transport_prompts_rotate_through_categories(harness):
     prompts = [
         {"id": f"{category}-{i}", "category": category}

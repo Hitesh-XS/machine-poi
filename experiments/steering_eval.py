@@ -29,6 +29,7 @@ import csv
 import hashlib
 import json
 import math
+import os
 import platform
 import random
 import re
@@ -423,6 +424,29 @@ def round_robin(prompts: list, n: int) -> list:
     return chosen
 
 
+def checkpoint_key(spec: dict, prompts: list, commit: str) -> dict:
+    """What a checkpoint must match to be resumed: the spec, prompts and code."""
+    return {
+        "spec_sha256": hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest(),
+        "prompt_ids": [p["id"] for p in prompts],
+        "commit": commit,
+    }
+
+
+def load_checkpoint(path, key) -> dict:
+    if path is None or not path.exists():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data["conditions"] if data.get("key") == key else {}
+
+
+def save_checkpoint(path, key, done) -> None:
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.parent.mkdir(parents=True, exist_ok=True)
+    temporary.write_text(json.dumps({"key": key, "conditions": done}, ensure_ascii=False), encoding="utf-8")
+    os.replace(temporary, path)
+
+
 def run_evaluation(
     steerer: QuranSteerer,
     spec: dict,
@@ -431,8 +455,14 @@ def run_evaluation(
     embed=None,
     final_prompts=None,
     log=print,
+    checkpoint=None,
+    resume_key=None,
 ) -> dict:
-    """Run every condition; returns records, summaries and paired differences."""
+    """Run every condition; returns records, summaries and paired differences.
+
+    With a ``checkpoint`` path, each finished condition is saved there, and a
+    later call with the same ``resume_key`` reuses them instead of rerunning.
+    """
     conditions = spec["conditions"]
     metrics = spec["metrics"]
     if any(c.get("rag") for c in conditions) and final_prompts is None:
@@ -460,20 +490,39 @@ def run_evaluation(
         )
 
     records, capability, transport, timings = [], {}, {}, {}
+    done = load_checkpoint(checkpoint, resume_key)
+    resumed = []
     for condition in conditions:
+        name = condition["name"]
+        signature = steering_signature(condition)
+        if name in done:
+            entry = done[name]
+            records += entry["records"]
+            timings[name] = entry["timing_s"]
+            if entry["capability"] is not None:
+                capability.setdefault(signature, entry["capability"])
+            if entry["transport"] is not None:
+                transport.setdefault(signature, entry["transport"])
+            resumed.append(name)
+            log(f"[{name}] resumed from checkpoint")
+            continue
         started = time.time()
         configure(steerer, condition, vectors, spec)
-        records += generate_outputs(steerer, condition, prompts, final_prompts or {}, spec)
-        signature = steering_signature(condition)
+        new_records = generate_outputs(steerer, condition, prompts, final_prompts or {}, spec)
+        records += new_records
+        entry = {"records": new_records, "capability": None, "transport": None}
         # Capability and transport see only the hooks, so RAG conditions share them.
         if arc_items and signature not in capability:
-            capability[signature] = score_capability(steerer, arc_items)
+            capability[signature] = entry["capability"] = score_capability(steerer, arc_items)
         if transport_prompts and signature not in transport:
-            transport[signature] = transport_values(
+            transport[signature] = entry["transport"] = transport_values(
                 steerer, transport_prompts, metrics["transport"], transport_layers
             )
-        timings[condition["name"]] = round(time.time() - started, 1)
-        log(f"[{condition['name']}] {timings[condition['name']]}s")
+        timings[name] = entry["timing_s"] = round(time.time() - started, 1)
+        if checkpoint is not None:
+            done[name] = entry
+            save_checkpoint(checkpoint, resume_key, done)
+        log(f"[{name}] {timings[name]}s")
     steerer.llm.clear_steering()
 
     if embed is not None:
@@ -490,6 +539,7 @@ def run_evaluation(
         } if transport_prompts else None,
         "transport_layers": transport_layers,
         "timings_s": timings,
+        "resumed_conditions": resumed,
     }
 
 
@@ -765,10 +815,14 @@ def main(argv=None):
     def embed(texts):
         return steerer.embedder.create_embeddings(list(texts), show_progress=False)
 
+    # Resume after an interruption only from committed, unchanged code.
+    clean = prov["code"]["commit"] and not prov["code"]["dirty"]
     results = run_evaluation(
         steerer, spec, prompts, arc_items=arc_items,
         embed=embed if spec["metrics"].get("thematic_proxy") else None,
         final_prompts=final_prompts,
+        checkpoint=args.work_dir / f"{spec['name']}.checkpoint.json" if clean else None,
+        resume_key=checkpoint_key(spec, prompts, prov["code"]["commit"]),
     )
     prov["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     result = {
