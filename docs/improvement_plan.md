@@ -4,7 +4,7 @@
 [Containment plan](rogue_agent_containment_plan.md) ·
 [Workspace roadmap](global_workspace_improvement_plan.md)
 
-Status: Phases 0 and 1 delivered 2026-09-29; later phases proposed. Reviewed at commit
+Status: Phases 0–2 delivered 2026-09-29; later phases proposed. Reviewed at commit
 `8be027d`. Paths and line numbers in the findings refer to that commit; Phase 1
 moved `src/` to `machine_poi/`.
 
@@ -145,7 +145,17 @@ Delivered as one commit per item with regression tests. Choices beyond the table
 | E4, E5 | Merge the model registries into one table (path, chat template use, reasoning config), and read dimensions from the loaded config. Add the Gemma 4 aliases. Move `chat_prompt` into `SteeredLLM` and turn it on by default for instruct checkpoints. | One registry is referenced from CLI, wrapper and experiments; a test checks templating is applied. |
 | R5 | Add `seed` and `do_sample` to generation and comparison. Comparisons default to greedy or a fixed seed, and the settings are recorded in outputs. | Repeated comparisons are byte-identical under a fixed seed on CPU. |
 
-### Phase 2: corpus and retrieval integrity
+### Phase 2: corpus and retrieval integrity (delivered)
+
+Delivered as one commit per item with regression tests. Notes beyond the table:
+- 45 verses were being dropped, not 19. Any corpus that is not exactly 6,236
+  lines raises `CorpusError`, and an explicit corpus path that does not exist is
+  an error rather than a silent fallback to the checkout's copy.
+- Index identity lives in each Chroma collection's metadata. Indexes built before
+  this change need one `--init-db --rebuild`, and steering caches moved to format 2.
+- Graph bridges use real graph neighbors (the neighbor-based option); the step that
+  stored an LLM answer snippet as an "entity" was removed.
+- Also fixed: `compare_models.py --compare-embeddings` always raised `TypeError`.
 
 | Item | Change | Acceptance |
 | --- | --- | --- |
