@@ -58,6 +58,8 @@ labels supplied by the model are insufficient.
 5. Before dispatch, the gateway logs the decision and reserves conservative
    action/cost/token amounts against the run and every ancestor. It re-resolves
    scope and checks authorization again after queueing, before adapter entry.
+   A stop, expiry or scope/binding change blocks the queued action. A review
+   that pauses the run concurrently does not: pausing holds new dispatch only.
 6. The async adapter executes with an `ExecutionContext` deadline/cancellation
    checkpoint. It must check immediately before each effect and enforce service
    limits. The outcome is logged without raw arguments, results or exceptions.
@@ -73,7 +75,7 @@ not a signed authorization token for a remote service.
 | --- | --- |
 | `RUNNING` | Proposals may be evaluated within the grant |
 | `OBSERVE` | Host has recorded a weak risk signal; authority is unchanged |
-| `PAUSED` | A pending action needs operator review; further dispatch is held |
+| `PAUSED` | A pending action needs operator review; new dispatch is held, while actions dispatched before the pause may finish |
 | `STOPPED` | The run cannot resume; new authorization requires fresh state |
 
 `observe` only records an allowed host signal and can move RUNNING to OBSERVE.

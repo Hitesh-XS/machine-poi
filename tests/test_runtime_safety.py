@@ -11,6 +11,7 @@ import torch
 from torch import nn
 
 from src.llm_wrapper import MODEL_CONFIGS, ActivationHook, SteeredLLM
+from src.knowledge_base import QuranKnowledgeBase
 from src.steerer import InvalidConfigError, QuranSteerer, SteeringConfig
 from src.steering_cache import load_vectors, save_vectors
 from src.workspace_diagnostics import summarize_steering_hooks
@@ -140,7 +141,7 @@ def test_dynamic_generation_failure_restores_baseline(graph):
     results = {"verse": [{"content": "reference"}], "passage": [], "surah": []}
     steerer.compute_dynamic_steering = Mock(return_value={0: torch.tensor([0.0, 1.0])})
     steerer.config.target_layers = [0]
-    steerer.knowledge_base = Mock()
+    steerer.knowledge_base = Mock(spec=QuranKnowledgeBase)
     steerer.knowledge_base.query_multiresolution.return_value = results
 
     async def query(**kwargs):

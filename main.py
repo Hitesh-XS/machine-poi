@@ -13,10 +13,10 @@ Based on:
 
 import argparse
 import asyncio
-import sys
 from pathlib import Path
 
 from src import QuranSteerer
+from src.steerer import InvalidConfigError, SteeringConfig
 from config import (
     ExperimentConfig,
     LLM_MODELS,
@@ -80,15 +80,16 @@ Examples:
     parser.add_argument(
         "--preset",
         type=str,
-        default="moderate",
+        default=None,
         choices=list(STEERING_PRESETS.keys()),
-        help="Steering intensity preset",
+        help="Steering preset (default: the model's recommended coefficient and "
+             "layers, otherwise 'moderate')",
     )
     parser.add_argument(
         "--coefficient",
         type=float,
         default=None,
-        help="Override steering coefficient (0.0-1.0)",
+        help="Override steering coefficient (0.0-2.0; blend mode 0.0-1.0)",
     )
     parser.add_argument(
         "--injection-mode",
@@ -107,9 +108,9 @@ Examples:
     parser.add_argument(
         "--chunk-by",
         type=str,
-        default="verse",
+        default=None,
         choices=["verse", "paragraph", "surah"],
-        help="How to chunk Quran text",
+        help="How to chunk Quran text (default: from preset)",
     )
 
     # Paths
@@ -248,11 +249,61 @@ def print_banner():
     """)
 
 
+def resolve_steering(args, config: ExperimentConfig):
+    """Resolve steering settings: CLI flag > --preset > model recommendation.
+
+    Returns the validated SteeringConfig and the text chunking to use.
+    """
+    preset = config.get_preset()
+    coefficient = next(
+        value
+        for value in (args.coefficient, config.custom_coefficient, preset.coefficient)
+        if value is not None
+    )
+    if args.layer_distribution is not None:
+        target_layers = None  # The explicit distribution selects layers.
+    elif config.custom_layers is not None:
+        target_layers = list(config.custom_layers)
+    else:
+        target_layers = preset.target_layers
+    steering = SteeringConfig(
+        coefficient=coefficient,
+        target_layers=target_layers,
+        injection_mode=args.injection_mode or preset.injection_mode,
+        layer_distribution=args.layer_distribution or preset.layer_distribution,
+    )
+    steering.validate()
+    return steering, args.chunk_by or preset.chunk_by
+
+
+async def build_graph_index(steerer: QuranSteerer, quran_path: str) -> None:
+    """Initialize and build the graph index on one event loop.
+
+    LightRAG storages bind to the loop that initializes them, so separate
+    asyncio.run calls would build on objects tied to a closed loop.
+    """
+    await steerer.initialize_hybrid_knowledge_base()
+    try:
+        await steerer.hybrid_kb.build_index(quran_path, build_graph=True)
+    finally:
+        await steerer.hybrid_kb.finalize()
+
+
+def generation_options(args) -> dict:
+    """Generation settings shared by every CLI mode."""
+    return {
+        "max_new_tokens": args.max_tokens,
+        "temperature": args.temperature,
+        "mra_mode": args.mra,
+        "reasoning_mode": args.reasoning,
+    }
+
+
 def run_interactive(steerer: QuranSteerer, args):
     """Run interactive chat mode."""
     print("\n=== Interactive Mode ===")
     print("Type 'quit' to exit, 'compare' to toggle comparison mode")
-    print("Type 'strength <value>' to adjust steering (0.0-1.0)")
+    print("Type 'strength <value>' to adjust steering (0.0-2.0; blend mode 0.0-1.0)")
     print()
 
     compare_mode = True
@@ -281,6 +332,8 @@ def run_interactive(steerer: QuranSteerer, args):
                 value = float(prompt.split()[1])
                 steerer.set_steering_strength(value)
                 print(f"Steering strength set to {value}")
+            except InvalidConfigError as exc:
+                print(f"Strength unchanged: {exc}")
             except (ValueError, IndexError):
                 print("Usage: strength <value>")
             continue
@@ -294,31 +347,14 @@ def run_interactive(steerer: QuranSteerer, args):
 
         # Generate response
         if compare_mode:
+            steered, baseline = steerer.compare(prompt, **generation_options(args))
             print("\n--- Steered Output ---")
-            steered = steerer.generate(
-                prompt, 
-                max_new_tokens=args.max_tokens, 
-                mra_mode=args.mra,
-                reasoning_mode=args.reasoning
-            )
             print(steered)
-
             print("\n--- Baseline Output ---")
-            baseline = steerer.generate_unsteered(
-                prompt, 
-                max_new_tokens=args.max_tokens,
-                reasoning_mode=args.reasoning
-            )
             print(baseline)
         else:
             print("\n--- Output ---")
-            output = steerer.generate(
-                prompt, 
-                max_new_tokens=args.max_tokens, 
-                mra_mode=args.mra,
-                reasoning_mode=args.reasoning
-            )
-            print(output)
+            print(steerer.generate(prompt, **generation_options(args)))
 
 
 def run_comparison(steerer: QuranSteerer, args):
@@ -329,11 +365,7 @@ def run_comparison(steerer: QuranSteerer, args):
         print(f"[{i}/{len(TEST_PROMPTS)}] {prompt}")
         print("-" * 60)
 
-        steered, baseline = steerer.compare(
-            prompt, 
-            max_new_tokens=args.max_tokens,
-            reasoning_mode=args.reasoning
-        )
+        steered, baseline = steerer.compare(prompt, **generation_options(args))
 
         print("STEERED:")
         print(steered[:300] + "..." if len(steered) > 300 else steered)
@@ -350,12 +382,7 @@ def run_single_prompt(steerer: QuranSteerer, prompt: str, args):
     print(f"\nPrompt: {prompt}\n")
     print("-" * 60)
 
-    steered, baseline = steerer.compare(
-        prompt,
-        max_new_tokens=args.max_tokens,
-        mra_mode=args.mra,
-        reasoning_mode=args.reasoning,
-    )
+    steered, baseline = steerer.compare(prompt, **generation_options(args))
 
     print("STEERED OUTPUT:")
     print(steered)
@@ -366,6 +393,8 @@ def run_single_prompt(steerer: QuranSteerer, prompt: str, args):
 
 def main():
     args = parse_args()
+    if args.llm == "custom" and not args.llm_path:
+        raise SystemExit("--llm custom requires --llm-path")
     print_banner()
 
     # Create configuration
@@ -374,23 +403,26 @@ def main():
         embedding_model=args.embedding,
         intensity=args.preset,
     )
-
-    # Override with command line args
-    if args.coefficient is not None:
-        config.custom_coefficient = args.coefficient
     if args.device:
         config.device = args.device
     if args.quantize:
         config.quantization = args.quantize
+    # Validate before loading any model.
+    try:
+        steering, chunk_by = resolve_steering(args, config)
+    except InvalidConfigError as exc:
+        raise SystemExit(f"Invalid steering configuration: {exc}")
 
     # Print configuration
-    print(f"Configuration:")
+    print("Configuration:")
     print(f"  LLM Model: {config.llm_model}")
     print(f"  Embedding Model: {config.embedding_model}")
-    print(f"  Preset: {config.preset}")
-    print(f"  Coefficient: {config.custom_coefficient or config.get_preset().coefficient}")
-    print(f"  Injection Mode: {args.injection_mode or config.get_preset().injection_mode}")
-    print(f"  Layer Distribution: {args.layer_distribution or config.get_preset().layer_distribution}")
+    print(f"  Preset: {args.preset or f'model default ({config.preset} fallback)'}")
+    print(f"  Coefficient: {steering.coefficient}")
+    print(f"  Injection Mode: {steering.injection_mode}")
+    print(f"  Layer Distribution: {steering.layer_distribution}")
+    print(f"  Target Layers: {steering.target_layers or 'from distribution'}")
+    print(f"  Chunk By: {chunk_by}")
     print(f"  Device: {config.device or 'auto'}")
     print(f"  Quantization: {config.quantization or 'none'}")
     print(f"  MRA Mode: {'ON' if args.mra else 'OFF'}")
@@ -431,14 +463,14 @@ def main():
         llm_revision=args.revision,
         trust_remote_code=args.trust_remote_code,
     )
+    steerer.config = steering
 
     if args.init_db:
         steerer.initialize_knowledge_base()
         steerer.knowledge_base.build_index(args.quran_path)
         if args.build_graph and args.graph_kb:
             print("Building LightRAG graph index (this may take a while)...")
-            asyncio.run(steerer.initialize_hybrid_knowledge_base())
-            asyncio.run(steerer.hybrid_kb.build_index(args.quran_path, build_graph=True))
+            asyncio.run(build_graph_index(steerer, args.quran_path))
             print("Graph index built successfully!")
         return
 
@@ -448,30 +480,15 @@ def main():
 
     # Prepare steering
     print("Preparing Quran-based steering vectors...")
-    cache_path = Path(args.cache_dir) / f"quran_{args.embedding}_{args.chunk_by}.npz"
-
-    # Apply custom coefficient if specified
-    if config.custom_coefficient:
-        steerer.config.coefficient = config.custom_coefficient
-    else:
-        steerer.config.coefficient = config.get_preset().coefficient
-
-    # Apply injection mode (CLI overrides preset)
-    steerer.config.injection_mode = args.injection_mode or config.get_preset().injection_mode
-    steerer.config.layer_distribution = args.layer_distribution or config.get_preset().layer_distribution
+    cache_path = Path(args.cache_dir) / f"quran_{args.embedding}_{chunk_by}.npz"
 
     if args.theme:
-        # First create base embeddings, then apply thematic
-        steerer.prepare_quran_steering(
-            chunk_by=args.chunk_by,
-            cache_path=cache_path,
-        )
         steerer.prepare_thematic_steering(args.theme)
     elif args.quran_persona:
         steerer.prepare_quran_persona(cache_dir=args.cache_dir)
     else:
         steerer.prepare_quran_steering(
-            chunk_by=args.chunk_by,
+            chunk_by=chunk_by,
             cache_path=cache_path,
         )
 
@@ -483,36 +500,11 @@ def main():
     elif args.compare:
         run_comparison(steerer, args)
     elif args.prompt:
-        # Note: run_single_prompt uses compare which calls compare_outputs which loops generate
-        # We need to update run_single_prompt to pass mra_mode if we want it there
-        # But for now, let's just make sure compare handles kwargs
-        # steerer.compare calls llm.compare_outputs which calls generate(..., **kwargs)
-        # So passing mra_mode=args.mra should work if we pass it to compare
-        steered, baseline = steerer.compare(
-            args.prompt, 
-            max_new_tokens=args.max_tokens, 
-            mra_mode=args.mra,
-            reasoning_mode=args.reasoning
-        )
-        print("STEERED OUTPUT:")
-        print(steered)
-        print()
-        print("BASELINE OUTPUT:")
-        print(baseline)
+        run_single_prompt(steerer, args.prompt, args)
     else:
-        # Default: run a demo prompt
-        demo_prompt = "What is the meaning of life and how should we live?"
-        # run_single_prompt(steerer, demo_prompt, args) 
-        # Inline run_single_prompt logic to pass mra_mode easily:
-        print(f"\nPrompt: {demo_prompt}\n")
-        steered, baseline = steerer.compare(
-            demo_prompt, 
-            max_new_tokens=args.max_tokens, 
-            mra_mode=args.mra,
-            reasoning_mode=args.reasoning
+        run_single_prompt(
+            steerer, "What is the meaning of life and how should we live?", args
         )
-        print("STEERED OUTPUT:")
-        print(steered)
 
         print("\n" + "=" * 60)
         print("Try other modes:")

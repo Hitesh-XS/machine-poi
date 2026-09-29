@@ -162,10 +162,13 @@ clamp delta. `get_attention_transport_diagnostics(prompt)` makes a separate
 forward pass; wrap it in `steering_disabled()` for its baseline. Geometry and
 perturbation metrics are research measurements, not action authorization signals.
 
-`QuranSteerer.compare` delegates directly to `SteeredLLM.compare_outputs`: it
-compares activation steering without assembling MRA or graph context, and it does
-not update `last_run_diagnostics`. For retrieval experiments, explicitly design
-and run the desired context/steering conditions through the high-level APIs.
+`QuranSteerer.compare` accepts the same options as `generate`. With
+`mra_mode=True` it retrieves context once, then generates the steered and baseline
+outputs from the same final prompt and random seed (`seed` defaults to
+`STEERING_DEFAULTS.random_seed`), so the arms differ only in steering. It stores
+the steered run's scalar summaries in `last_run_diagnostics`. It does not assemble
+graph context; use `generate_with_graph` for that. `SteeredLLM.generate` raises
+`TypeError` for retrieval options such as `mra_mode` instead of ignoring them.
 
 ## Model loading and cache migration
 
@@ -196,9 +199,10 @@ python main.py --mra --interactive
 python compare_models.py --list-models
 ```
 
-The interactive path calls `QuranSteerer.generate`, so `--mra --interactive` uses
-MRA context after the vector index exists. Single-prompt/default/comparison paths
-call `compare`; `--mra --prompt` does **not** add MRA context there. `--graph-kb`
+Every generation path forwards `--max-tokens`, `--temperature`, `--mra` and
+`--reasoning`. Single-prompt, default, `--compare` and interactive comparison runs
+call `compare`, so `--mra` adds the same MRA context to both arms once the vector
+index exists. Interactive mode with comparison toggled off calls `generate`. `--graph-kb`
 configures the graph provider and enables graph index building with
 `--init-db --build-graph`; current CLI generation does not call
 `generate_with_graph`. Use the async API above for graph generation.
@@ -208,23 +212,25 @@ configures the graph provider and enables graph index building with
 | `--llm`, `--llm-path` | Registered alias, or `--llm custom --llm-path MODEL_PATH`; default `deepseek-r1-1.5b` |
 | `--embedding` | Registered embedding alias; default `paraphrase-minilm` |
 | `--revision`, `--trust-remote-code` | LLM revision and reviewed-code opt-in; opt-in requires a full commit hash |
-| `--preset` | `gentle`, `moderate`, `strong`, `focused`, `workspace` |
-| `--coefficient` | Override strength; API validation permits [0, 2], blend [0, 1]; CLI help still displays [0, 1] |
+| `--preset` | `gentle`, `moderate`, `strong`, `focused`, `workspace`; when omitted, a registered model's recommended coefficient and layers apply, with `moderate` for the remaining settings |
+| `--coefficient` | Override strength, including `0`; validated before models load: [0, 2], blend [0, 1] |
 | `--injection-mode` | `add`, `blend`, `replace`, `clamp` |
 | `--layer-distribution` | `uniform`, `bell`, `focused`, `workspace` |
-| `--chunk-by`, `--quran-persona`, `--theme` | Select text resolution, weighted persona, or thematic preparation |
+| `--chunk-by`, `--quran-persona`, `--theme` | Select text resolution (default from preset), weighted persona, or thematic preparation |
 | `--quran-path`, `--cache-dir` | Corpus and steering-cache paths |
 | `--device`, `--quantize` | Device (`cpu`, `cuda`, `mps`) and optional `4bit`/`8bit` loading |
-| `--max-tokens`, `--temperature` | Generation options; not all CLI paths forward temperature, so use the Python API for controlled experiments |
+| `--max-tokens`, `--temperature` | Generation options, forwarded on every CLI path |
 | `--interactive`, `--compare`, `--prompt` | Interactive generation, predefined comparisons, or one comparison prompt |
 | `--reasoning` | Model-specific prompt/decoding behavior; inspect it when matching experimental conditions |
-| `--init-db`, `--mra` | Build vector index; enable MRA on the interactive generation path |
+| `--init-db`, `--mra` | Build vector index; add MRA context on every generation path |
 | `--graph-kb`, `--build-graph` | Configure graph provider; build graph with `--init-db` |
 | `--llm-provider`, `--llm-api-model` | Provider (`openai`, `gemini`, `ollama`) and its model name |
 
-The CLI uses a truthiness check when applying `--coefficient`: a zero value falls
-back to the preset. Use `set_steering_strength(0.0)` in Python if testing a zero
-coefficient, and remember that zero clamp is not an unsteered baseline.
+Settings resolve in this order: an explicit flag, then `--preset`, then the
+model's recommendation, then `moderate`. `--layer-distribution` selects layers
+from that distribution instead of a model's recommended layers. A zero
+coefficient is applied as given; remember that zero clamp is not an unsteered
+baseline.
 
 ## Registered model aliases
 

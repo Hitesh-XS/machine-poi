@@ -415,6 +415,33 @@ def test_scope_rechecked_after_queueing_before_executor_entry():
     run(scenario())
 
 
+def test_concurrent_review_holds_new_work_without_stopping_dispatched_action():
+    async def scenario():
+        def describe(args):
+            return ActionScope(
+                frozenset({args["resource"]}),
+                frozenset({args["destination"]}),
+                requires_review=args["body"] == "needs review",
+            )
+
+        rig = Rig(describe=describe)
+        allowed, reviewed = await asyncio.gather(
+            rig.gateway.submit("agent", rig.action("allowed")),
+            rig.gateway.submit("agent", rig.action("reviewed", body="needs review")),
+        )
+        assert allowed.status == "executed" and reviewed.status == "pending"
+        assert rig.gateway.state("run") == RunState.PAUSED and not rig.revoked
+        held = await rig.gateway.submit("agent", rig.action("held"))
+        assert held.status == "blocked" and held.decision.reason == "run_paused"
+        assert rig.gateway.state("run") == RunState.PAUSED
+        pending = rig.gateway.pending("operator", "run")
+        out = await rig.gateway.approve("operator", "run", pending.action_hash)
+        assert out.status == "executed"
+        assert [effect["body"] for effect in rig.effects] == ["hello", "needs review"]
+
+    run(scenario())
+
+
 def test_paused_attempts_cannot_bypass_attempt_budget():
     async def scenario():
         rig = Rig(review=True)

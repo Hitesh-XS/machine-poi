@@ -9,7 +9,7 @@ Manages multi-resolution indexing of the Quran:
 
 import logging
 from pathlib import Path
-from typing import List, Dict, Optional, Union, Any
+from typing import List, Dict, Optional, Union
 import chromadb
 
 from .quran_embeddings import QuranEmbeddings
@@ -17,7 +17,7 @@ from .quran_embeddings import QuranEmbeddings
 # Import config
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import STEERING_DEFAULTS, MultiResolutionResults, RetrievalResult
+from config import STEERING_DEFAULTS
 
 # Setup logger
 logger = logging.getLogger("machine_poi.knowledge_base")

@@ -6,8 +6,11 @@ using the existing SteeredLLM infrastructure.
 """
 
 import logging
-from typing import Optional, Dict, Any, List
+from typing import TYPE_CHECKING, Optional, Dict, List
 import asyncio
+
+if TYPE_CHECKING:
+    from .llm_wrapper import SteeredLLM
 
 logger = logging.getLogger("machine_poi.llm_adapters")
 
@@ -176,7 +179,7 @@ def create_gemini_adapter(
         )
 
         # Run in executor since genai is sync
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None,
             lambda: model.generate_content(contents)
@@ -223,17 +226,18 @@ def create_local_llm_adapter(
 
         full_prompt += f"User: {prompt}\n\nAssistant:"
 
-        # Run in executor to avoid blocking
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: steered_llm.generate(
-                prompt=full_prompt,
-                max_new_tokens=kwargs.get("max_tokens", 1024),
-                temperature=kwargs.get("temperature", 0.7),
-            )
-        )
+        def complete():
+            # Extraction output becomes the shared knowledge graph; steered
+            # text would carry the intervention into every later retrieval.
+            with steered_llm.steering_disabled():
+                return steered_llm.generate(
+                    prompt=full_prompt,
+                    max_new_tokens=kwargs.get("max_tokens", 1024),
+                    temperature=kwargs.get("temperature", 0.7),
+                )
 
-        return result
+        # Run in executor to avoid blocking
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, complete)
 
     return local_complete

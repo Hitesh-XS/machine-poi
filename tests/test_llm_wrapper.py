@@ -8,10 +8,9 @@ Tests for:
 """
 
 import pytest
-import numpy as np
 import torch
 import torch.nn as nn
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import patch
 from types import SimpleNamespace
 
 

@@ -10,6 +10,9 @@ from typing import List, Dict, Optional, Set, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 import numpy as np
 
+from .async_utils import run_sync
+from .themes import QURANIC_THEMES, embed_query, matching_keywords, theme_index
+
 if TYPE_CHECKING:
     from .lightrag_adapter import QuranLightRAG
     from .quran_embeddings import QuranEmbeddings
@@ -104,16 +107,7 @@ class GraphBridgeGenerator:
 
     def _extract_query_terms(self, query: str) -> List[str]:
         """Extract relevant terms from user query."""
-        # Simple tokenization - can be enhanced with NLP
-        query_lower = query.lower()
-        terms = []
-
-        # Check for known term mappings
-        for term in self.TERM_TO_ENTITY:
-            if term in query_lower:
-                terms.append(term)
-
-        return terms
+        return matching_keywords(query, self.TERM_TO_ENTITY)
 
     async def generate_bridges(
         self,
@@ -189,18 +183,9 @@ class GraphBridgeGenerator:
 
         # 4. Fallback to embedding similarity
         if not bridges and use_embedding_fallback and self.embedder:
-            # Import here to avoid circular imports
-            from .steerer import QURANIC_THEMES
-
-            query_emb = self.embedder.create_embeddings([query])[0]
-            theme_embs = self.embedder.create_embeddings(QURANIC_THEMES)
-
-            # Normalize
-            query_emb = query_emb / (np.linalg.norm(query_emb) + 1e-8)
-            norms = np.linalg.norm(theme_embs, axis=1, keepdims=True)
-            theme_embs = theme_embs / (norms + 1e-8)
-
-            similarities = np.dot(theme_embs, query_emb)
+            similarities = np.dot(
+                theme_index(self.embedder), embed_query(self.embedder, query)
+            )
             top_indices = np.argsort(similarities)[::-1][:max_bridges]
 
             for idx in top_indices:
@@ -228,7 +213,4 @@ class GraphBridgeGenerator:
         max_bridges: int = 5,
     ) -> BridgeResult:
         """Synchronous wrapper for generate_bridges."""
-        import asyncio
-        return asyncio.get_event_loop().run_until_complete(
-            self.generate_bridges(query, max_bridges)
-        )
+        return run_sync(self.generate_bridges(query, max_bridges))

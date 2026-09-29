@@ -10,7 +10,7 @@ help:
 	@echo "make test-file  - Run specific test file (FILE=tests/test_xxx.py)"
 	@echo "make test-match - Run tests matching pattern (MATCH=pattern)"
 	@echo "make clean      - Remove cache and temp files"
-	@echo "make lint       - Run code linting (if available)"
+	@echo "make lint       - Run ruff with the rules in ruff.toml"
 
 # Run fast tests only (exclude slow and integration)
 test:
@@ -59,12 +59,6 @@ clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 
-# Lint (optional, if you have ruff/flake8)
+# Lint with the rules in ruff.toml (ruff is pinned in requirements-test.txt)
 lint:
-	@if command -v ruff &> /dev/null; then \
-		ruff check src tests; \
-	elif command -v flake8 &> /dev/null; then \
-		flake8 src tests; \
-	else \
-		echo "No linter found. Install ruff or flake8."; \
-	fi
+	python -m ruff check .

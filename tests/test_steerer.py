@@ -12,8 +12,11 @@ import pytest
 import numpy as np
 import torch
 from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
-from dataclasses import asdict
+from unittest.mock import Mock
+
+from src.llm_wrapper import SteeredLLM
+from src.quran_embeddings import QuranEmbeddings
+from src.steerer import InvalidConfigError
 
 
 class TestSteeringConfig:
@@ -245,12 +248,11 @@ class TestComputeDynamicSteering:
     def mock_steerer_with_models(self, sample_embedding_dim, sample_hidden_dim, sample_num_layers):
         """Create a steerer with mocked models."""
         from src.steerer import QuranSteerer
-        from src.steering_vectors import SteeringVectorExtractor
         
         steerer = QuranSteerer()
         
         # Mock LLM
-        steerer.llm = Mock()
+        steerer.llm = Mock(spec=SteeredLLM)
         steerer.llm.hidden_size = sample_hidden_dim
         steerer.llm.num_layers = sample_num_layers
         
@@ -413,12 +415,12 @@ class TestPrepareThematicSteering:
         texts_list = [f"verse {i}" for i in range(20)]
         
         # Mock embedder
-        steerer.embedder = Mock()
+        steerer.embedder = Mock(spec=QuranEmbeddings)
         steerer.embedder.create_embeddings.return_value = np.random.randn(1, sample_embedding_dim).astype(np.float32)
         steerer.embedder.load_quran_text.return_value = texts_list
         
         # Mock LLM
-        steerer.llm = Mock()
+        steerer.llm = Mock(spec=SteeredLLM)
         steerer.llm.hidden_size = sample_hidden_dim
         steerer.llm.num_layers = sample_num_layers
         steerer.llm.register_steering_hook = Mock()
@@ -470,7 +472,7 @@ class TestPrepareQuranPersona:
         steerer.embedder.load_quran_text.return_value = ["v1", "v2", "v3"]
         
         # Mock LLM
-        steerer.llm = Mock()
+        steerer.llm = Mock(spec=SteeredLLM)
         steerer.llm.hidden_size = sample_hidden_dim
         steerer.llm.num_layers = sample_num_layers
         steerer.llm.register_steering_hook = Mock()
@@ -510,12 +512,13 @@ class TestSetSteeringStrength:
         from src.steerer import QuranSteerer
         
         steerer = QuranSteerer()
-        steerer.llm = Mock()
-        steerer.llm.update_steering_coefficient = Mock()
-        
-        # Should update config
+        steerer.llm = Mock(spec=SteeredLLM)
+
         steerer.set_steering_strength(0.8)
-        
+        assert steerer.config.coefficient == 0.8
+
+        with pytest.raises(InvalidConfigError):
+            steerer.set_steering_strength(3.0)
         assert steerer.config.coefficient == 0.8
 
 
@@ -530,7 +533,7 @@ class TestGenerateAndCompare:
         steerer = QuranSteerer()
         
         # Mock LLM
-        steerer.llm = Mock()
+        steerer.llm = Mock(spec=SteeredLLM)
         steerer.llm.hidden_size = sample_hidden_dim
         steerer.llm.num_layers = sample_num_layers
         steerer.llm.generate.return_value = "Generated steered output"
@@ -552,13 +555,9 @@ class TestGenerateAndCompare:
         assert generation_steerer.llm.generate.called
 
     def test_compare_returns_tuple(self, generation_steerer):
-        """Test that compare returns steered and baseline."""
-        # Mock the compare method directly since it's complex
-        generation_steerer.compare = Mock(return_value=("steered output", "baseline output"))
-        
+        """Test that compare returns steered and baseline outputs."""
         steered, baseline = generation_steerer.compare("Test prompt")
-        
+
         assert isinstance(steered, str)
         assert isinstance(baseline, str)
-        assert steered == "steered output"
-        assert baseline == "baseline output"
+        assert generation_steerer.llm.generate.call_count == 2

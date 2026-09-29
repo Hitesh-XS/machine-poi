@@ -6,9 +6,12 @@ for comprehensive Quranic knowledge access.
 """
 
 import logging
-from typing import Dict, List, Optional, Any, Union, TYPE_CHECKING
+from typing import Dict, List, Optional, Union, TYPE_CHECKING
 from pathlib import Path
 from dataclasses import dataclass
+
+from .async_utils import run_sync
+from .themes import matching_keywords
 
 if TYPE_CHECKING:
     from .knowledge_base import QuranKnowledgeBase
@@ -193,7 +196,7 @@ class HybridQuranKnowledgeBase:
         if mode == "auto":
             # Simple heuristic: use graph if query seems conceptual
             conceptual_indicators = ["why", "how", "meaning", "purpose", "teach", "learn"]
-            if any(ind in query.lower() for ind in conceptual_indicators):
+            if matching_keywords(query, conceptual_indicators):
                 mode = "hybrid"
             else:
                 mode = "vector"
@@ -260,7 +263,4 @@ class HybridQuranKnowledgeBase:
         **kwargs,
     ) -> HybridQueryResult:
         """Synchronous query wrapper."""
-        import asyncio
-        return asyncio.get_event_loop().run_until_complete(
-            self.query(query, mode, **kwargs)
-        )
+        return run_sync(self.query(query, mode, **kwargs))
