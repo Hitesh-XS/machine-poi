@@ -113,6 +113,6 @@ def test_mra_prompt_cites_retrieved_passages():
         "surah": [{"content": "legacy item without a reference"}],
     }
     prompt, _ = steerer._mra_context("What is truth?", use_domain_bridges=False)
-    assert "[2:255] \\u0627" in prompt  # JSON-quoted context keeps the citation
+    assert "[2:255] الله" in prompt  # quoted context keeps the citation, readable
     assert "[2:254-272] passage text" in prompt
     assert "- legacy item without a reference" in prompt

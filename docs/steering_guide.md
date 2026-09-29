@@ -106,7 +106,11 @@ answer = steerer.generate(
 check. Use it only for an intentionally trusted research corpus. Text returned by
 MRA and graph retrieval is quoted as reference data with a 12,000-character bound
 per MRA resolution, or for the combined graph context. Oversized context raises
-an error instead of silently truncating. Quoting does not detect prompt injection.
+an error instead of silently truncating. Arabic and other scripts stay readable
+inside the JSON; control, zero-width, bidirectional-override and separator
+characters are escaped, so they cannot hide or reorder text. Earlier versions
+escaped all non-ASCII text, which made Arabic context unreadable to the model and
+several times longer in tokens. Quoting does not detect prompt injection.
 
 ## Graph retrieval
 
