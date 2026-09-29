@@ -1,7 +1,90 @@
-# Steered vs Baseline Attention-Transport: Results on Real Models
+# Model Results
 
-**Relationship to the current runtime (2026-09-29):** this is a historical model
-experiment report. The guardian/steering-hardening changes did not re-run these
+## Evaluation harness run: Qwen2.5-0.5B-Instruct (2026-09-29)
+
+This is the run that [PAPER.md](../../PAPER.md) cites. It was produced by
+`experiments/steering_eval.py` ([evaluation guide](../../docs/evaluation.md))
+from commit `7a745e0` with a clean tree, on CPU (4 threads, torch 2.8.0,
+transformers 4.57.6). Full tables: [`qwen2.5-0.5b_phase4.md`](qwen2.5-0.5b_phase4.md);
+every output, metric and provenance field: [`qwen2.5-0.5b_phase4.json`](qwen2.5-0.5b_phase4.json).
+
+- **Model:** `Qwen/Qwen2.5-0.5B-Instruct`, revision `7ae5576`, chat template on.
+- **Prompts:** the 48 held-out `test` prompts (8 neutral, 8 value-laden and 8
+  technical in English, with Modern Standard Arabic translations), greedy
+  decoding of 80 tokens.
+- **Vectors:** 50 sampled verses, centered on the Arabic control unless noted,
+  steering layers 8-15 with the `bell` distribution. Doses are calibrated ratios;
+  the achieved peak ratio was 1-10% above target.
+- **Capability:** 100 seeded ARC-Easy test items (dataset revision `210d026`).
+- **Intervals:** 95% bootstrap over prompts or items; Δ columns are paired
+  differences from the baseline.
+
+| Condition | Degenerate outputs | ΔNLL (unsteered model) | ARC-Easy | ΔARC-Easy | Δ thematic proxy |
+| --- | --- | --- | --- | --- | --- |
+| baseline | 0.00 [0.00, 0.00] | – | 0.61 [0.51, 0.71] | – | – |
+| raw mean, ratio 0.1 | 0.00 [0.00, 0.00] | +0.36 [+0.29, +0.44] | 0.55 [0.45, 0.65] | -0.06 [-0.13, +0.01] | +0.02 [-0.01, +0.04] |
+| centered, 0.05 | 0.00 [0.00, 0.00] | +0.19 [+0.13, +0.26] | 0.59 [0.50, 0.69] | -0.02 [-0.07, +0.03] | +0.08 [+0.04, +0.13] |
+| centered, 0.1 | 0.06 [0.00, 0.12] | +1.11 [+0.93, +1.28] | 0.46 [0.36, 0.56] | -0.15 [-0.25, -0.06] | +0.32 [+0.25, +0.39] |
+| centered, 0.2 | 0.81 [0.71, 0.92] | +1.71 [+1.39, +2.03] | 0.40 [0.31, 0.50] | -0.21 [-0.32, -0.09] | +0.31 [+0.25, +0.37] |
+| centered on English control, 0.1 | 0.00 [0.00, 0.00] | +0.29 [+0.24, +0.34] | 0.56 [0.46, 0.66] | -0.05 [-0.11, +0.01] | +0.02 [-0.00, +0.05] |
+| retrieval (RAG) only | 0.00 [0.00, 0.00] | +0.02 [-0.06, +0.09] | 0.61 (same hooks as baseline) | – | +0.12 [+0.08, +0.16] |
+| RAG + centered, 0.1 | 0.21 [0.10, 0.33] | +0.83 [+0.57, +1.09] | 0.46 (same hooks as centered 0.1) | – | +0.33 [+0.27, +0.39] |
+
+What the run shows, for this model and these prompts:
+
+1. **A dose-response with a trade-off.** Centered vectors at ratio 0.05 left
+   ARC-Easy accuracy unchanged within the interval and raised the thematic
+   proxy slightly. At 0.1 the proxy rose four times as much, but accuracy fell
+   by 15 points (paired p = 0.005) and a religious register appeared even in
+   answers to neutral science prompts ("The world was created in the beginning
+   in the highest power…" for a question about the seasons). At 0.2, 81% of
+   outputs degenerated.
+2. **Centering matters.** The raw mean at ratio 0.1 moved the outputs (ΔNLL
+   +0.36) without a detectable thematic change, which supports the centered
+   default.
+3. **No language switch on English prompts.** No steered condition without
+   retrieval produced an Arabic-script answer to any of the 24 English prompts,
+   including the 8 neutral ones, under either control. Earlier Gemma probes
+   reported such switches; this model did not show them at these doses. The
+   English control gave a much weaker direction (proxy +0.02, ΔNLL +0.29) than
+   the Arabic one at the same ratio.
+4. **Retrieval changes the answer language.** With the multi-resolution prompt,
+   none of the 24 Arabic prompts was answered in Arabic script (24 of 24 at
+   baseline), because the template's instructions are in English. Retrieval
+   alone raised the proxy (+0.12) without changing NLL; combined with steering
+   at 0.1 it produced scripture pastiche or bare verse lists, and 21% of outputs
+   degenerated.
+5. **Transport geometry follows the dose.** Mean ρ and holonomy over layers
+   8-15 fell with the centered dose (Δρ -0.010 at 0.05, -0.058 at 0.2) and rose
+   under the English control; see the full tables. These are geometric
+   measurements, not behavior.
+
+Limits of this run:
+
+- One 0.5B model, greedy decoding, 48 prompts and 100 ARC items.
+- The script metric counts Arabic script, not language.
+- The thematic proxy rewards a religious register whether or not it is relevant;
+  the seasons answer above scores high. The blinded
+  [`rating sheet`](qwen2.5-0.5b_phase4_rating_sheet.csv) (48 value-prompt
+  outputs, 6 per condition) awaits two human raters; the
+  [key](qwen2.5-0.5b_phase4_rating_key.json) should not be opened until they
+  finish.
+- Degeneration rates are lower bounds. The detector misses loops with a period
+  above four characters (for example "…hasshhasshhassh…" at ratio 0.2).
+  Widening it should be tuned on the dev split, not on these results.
+- The Arabic prompts and the Arabic control set await a native-speaker review.
+- A background time limit interrupted the run twice. Seven conditions were
+  resumed from checkpoints written by the same commit, and only the last ran in
+  the final launch (`resumed_conditions` in the JSON).
+
+---
+
+## Historical probes (before the evaluation harness)
+
+**Relationship to the current runtime (2026-09-29):** the sections below are a
+historical model experiment report. They predate the evaluation harness, used 1-16
+prompts without held-out separation or capability checks, and are not cited as
+evidence in PAPER.md. The guardian/steering-hardening changes did not re-run these
 models or rewrite the JSON evidence. The high-level API now restores temporary
 hooks, computes mode-specific perturbation summaries, and requires explicit
 trusted-retrieval opt-in for dynamic steering. Raw experimental vector scales and
@@ -327,6 +410,9 @@ python experiments/steered_vs_baseline_transport.py --model qwen3-0.6b \
 
 ## Files
 
+- `qwen2.5-0.5b_phase4.json`, `qwen2.5-0.5b_phase4.md` -- the evaluation
+  harness run above; `qwen2.5-0.5b_phase4_rating_sheet.csv` and
+  `qwen2.5-0.5b_phase4_rating_key.json` -- its blinded rating sheet and key.
 - `smollm2-135m_coeff{0.25,1.0,4.0}.json` -- full per-prompt, per-layer
   tables for the dose-response (0.5 and 2.0 omitted; they interpolate).
 - `qwen3-0.6b_coeff4.0.json` -- Qwen3-0.6B run.

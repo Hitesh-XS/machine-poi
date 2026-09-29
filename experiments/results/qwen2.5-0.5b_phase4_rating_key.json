@@ -1,0 +1,197 @@
+{
+ "rubric_version": 1,
+ "items": {
+  "R001": {
+   "condition": "baseline",
+   "prompt_id": "ar-value-02"
+  },
+  "R002": {
+   "condition": "centered_r0.05",
+   "prompt_id": "ar-value-05"
+  },
+  "R003": {
+   "condition": "centered_en_control_r0.1",
+   "prompt_id": "ar-value-08"
+  },
+  "R004": {
+   "condition": "baseline",
+   "prompt_id": "en-value-01"
+  },
+  "R005": {
+   "condition": "rag_centered_r0.1",
+   "prompt_id": "ar-value-01"
+  },
+  "R006": {
+   "condition": "centered_r0.1",
+   "prompt_id": "en-value-01"
+  },
+  "R007": {
+   "condition": "rag_only",
+   "prompt_id": "ar-value-03"
+  },
+  "R008": {
+   "condition": "centered_r0.05",
+   "prompt_id": "ar-value-01"
+  },
+  "R009": {
+   "condition": "centered_r0.2",
+   "prompt_id": "en-value-05"
+  },
+  "R010": {
+   "condition": "centered_r0.2",
+   "prompt_id": "ar-value-06"
+  },
+  "R011": {
+   "condition": "centered_r0.2",
+   "prompt_id": "en-value-06"
+  },
+  "R012": {
+   "condition": "rag_centered_r0.1",
+   "prompt_id": "ar-value-03"
+  },
+  "R013": {
+   "condition": "centered_r0.05",
+   "prompt_id": "en-value-01"
+  },
+  "R014": {
+   "condition": "raw_mean_r0.1",
+   "prompt_id": "en-value-08"
+  },
+  "R015": {
+   "condition": "raw_mean_r0.1",
+   "prompt_id": "en-value-06"
+  },
+  "R016": {
+   "condition": "centered_en_control_r0.1",
+   "prompt_id": "ar-value-04"
+  },
+  "R017": {
+   "condition": "rag_only",
+   "prompt_id": "en-value-08"
+  },
+  "R018": {
+   "condition": "raw_mean_r0.1",
+   "prompt_id": "en-value-03"
+  },
+  "R019": {
+   "condition": "centered_r0.1",
+   "prompt_id": "ar-value-02"
+  },
+  "R020": {
+   "condition": "centered_r0.1",
+   "prompt_id": "ar-value-05"
+  },
+  "R021": {
+   "condition": "rag_only",
+   "prompt_id": "ar-value-02"
+  },
+  "R022": {
+   "condition": "raw_mean_r0.1",
+   "prompt_id": "en-value-05"
+  },
+  "R023": {
+   "condition": "centered_r0.1",
+   "prompt_id": "en-value-05"
+  },
+  "R024": {
+   "condition": "centered_en_control_r0.1",
+   "prompt_id": "ar-value-05"
+  },
+  "R025": {
+   "condition": "raw_mean_r0.1",
+   "prompt_id": "ar-value-01"
+  },
+  "R026": {
+   "condition": "rag_only",
+   "prompt_id": "en-value-02"
+  },
+  "R027": {
+   "condition": "baseline",
+   "prompt_id": "en-value-03"
+  },
+  "R028": {
+   "condition": "rag_centered_r0.1",
+   "prompt_id": "en-value-04"
+  },
+  "R029": {
+   "condition": "rag_centered_r0.1",
+   "prompt_id": "ar-value-02"
+  },
+  "R030": {
+   "condition": "centered_r0.2",
+   "prompt_id": "en-value-08"
+  },
+  "R031": {
+   "condition": "centered_en_control_r0.1",
+   "prompt_id": "en-value-03"
+  },
+  "R032": {
+   "condition": "rag_centered_r0.1",
+   "prompt_id": "ar-value-06"
+  },
+  "R033": {
+   "condition": "centered_r0.05",
+   "prompt_id": "en-value-04"
+  },
+  "R034": {
+   "condition": "rag_centered_r0.1",
+   "prompt_id": "en-value-08"
+  },
+  "R035": {
+   "condition": "baseline",
+   "prompt_id": "ar-value-08"
+  },
+  "R036": {
+   "condition": "centered_r0.05",
+   "prompt_id": "en-value-02"
+  },
+  "R037": {
+   "condition": "rag_only",
+   "prompt_id": "ar-value-07"
+  },
+  "R038": {
+   "condition": "centered_r0.1",
+   "prompt_id": "ar-value-07"
+  },
+  "R039": {
+   "condition": "centered_r0.1",
+   "prompt_id": "en-value-04"
+  },
+  "R040": {
+   "condition": "centered_en_control_r0.1",
+   "prompt_id": "en-value-02"
+  },
+  "R041": {
+   "condition": "baseline",
+   "prompt_id": "ar-value-07"
+  },
+  "R042": {
+   "condition": "centered_r0.2",
+   "prompt_id": "en-value-04"
+  },
+  "R043": {
+   "condition": "raw_mean_r0.1",
+   "prompt_id": "ar-value-06"
+  },
+  "R044": {
+   "condition": "centered_en_control_r0.1",
+   "prompt_id": "en-value-01"
+  },
+  "R045": {
+   "condition": "centered_r0.2",
+   "prompt_id": "ar-value-08"
+  },
+  "R046": {
+   "condition": "baseline",
+   "prompt_id": "ar-value-06"
+  },
+  "R047": {
+   "condition": "centered_r0.05",
+   "prompt_id": "en-value-07"
+  },
+  "R048": {
+   "condition": "rag_only",
+   "prompt_id": "en-value-03"
+  }
+ }
+}
