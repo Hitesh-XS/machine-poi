@@ -452,15 +452,20 @@ THEMATIC_TEST_PROMPTS = {
 def get_recommended_config(
     llm_model: str,
     embedding_model: str = "paraphrase-minilm",
-    intensity: str = "moderate",
+    intensity: Optional[str] = None,
 ) -> ExperimentConfig:
     """
     Get recommended configuration for a given model combination.
 
+    An explicitly requested preset takes precedence over the model's
+    recommended coefficient and layers, which apply only when no preset is
+    given. Without a preset, the "moderate" preset supplies the remaining
+    settings.
+
     Args:
         llm_model: LLM model name
         embedding_model: Embedding model name
-        intensity: Steering intensity ("gentle", "moderate", "strong")
+        intensity: Steering preset name, or None for model recommendations
 
     Returns:
         Configured ExperimentConfig
@@ -468,11 +473,11 @@ def get_recommended_config(
     config = ExperimentConfig(
         llm_model=llm_model,
         embedding_model=embedding_model,
-        preset=intensity,
+        preset=intensity or "moderate",
     )
 
     # Apply model-specific recommendations
-    if llm_model in LLM_MODELS:
+    if intensity is None and llm_model in LLM_MODELS:
         model_config = LLM_MODELS[llm_model]
         config.custom_coefficient = model_config.get("recommended_coefficient")
         config.custom_layers = model_config.get("recommended_layers")
