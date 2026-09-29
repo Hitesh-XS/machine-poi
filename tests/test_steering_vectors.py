@@ -1,5 +1,5 @@
 """
-Tests for src/steering_vectors.py
+Tests for machine_poi/steering_vectors.py
 
 Tests for:
 - SteeringVectorExtractor (projection methods)
@@ -14,7 +14,7 @@ class TestSteeringVectorExtractorInit:
 
     def test_init_random_projection(self, sample_embedding_dim, sample_hidden_dim):
         """Test initialization with random projection."""
-        from src.steering_vectors import SteeringVectorExtractor
+        from machine_poi.steering_vectors import SteeringVectorExtractor
         
         extractor = SteeringVectorExtractor(
             source_dim=sample_embedding_dim,
@@ -30,7 +30,7 @@ class TestSteeringVectorExtractorInit:
 
     def test_init_linear_projection(self, sample_embedding_dim, sample_hidden_dim):
         """Test initialization with linear (learnable) projection."""
-        from src.steering_vectors import SteeringVectorExtractor
+        from machine_poi.steering_vectors import SteeringVectorExtractor
         
         extractor = SteeringVectorExtractor(
             source_dim=sample_embedding_dim,
@@ -43,7 +43,7 @@ class TestSteeringVectorExtractorInit:
 
     def test_init_orthogonal_projection(self, sample_embedding_dim, sample_hidden_dim):
         """Test initialization with orthogonal projection."""
-        from src.steering_vectors import SteeringVectorExtractor
+        from machine_poi.steering_vectors import SteeringVectorExtractor
         
         extractor = SteeringVectorExtractor(
             source_dim=sample_embedding_dim,
@@ -56,7 +56,7 @@ class TestSteeringVectorExtractorInit:
 
     def test_projection_matrix_shape(self, sample_embedding_dim, sample_hidden_dim):
         """Test that projection matrix has correct shape."""
-        from src.steering_vectors import SteeringVectorExtractor
+        from machine_poi.steering_vectors import SteeringVectorExtractor
         
         extractor = SteeringVectorExtractor(
             source_dim=sample_embedding_dim,
@@ -235,7 +235,7 @@ class TestSaveLoad:
         steering_vector_extractor.save(save_path)
         
         # Load into new extractor
-        from src.steering_vectors import SteeringVectorExtractor
+        from machine_poi.steering_vectors import SteeringVectorExtractor
         new_extractor = SteeringVectorExtractor(
             source_dim=steering_vector_extractor.source_dim,
             target_dim=steering_vector_extractor.target_dim,
@@ -255,7 +255,7 @@ class TestContrastiveSteeringExtractor:
 
     def test_init(self, sample_hidden_dim):
         """Test initialization."""
-        from src.steering_vectors import ContrastiveSteeringExtractor
+        from machine_poi.steering_vectors import ContrastiveSteeringExtractor
         
         extractor = ContrastiveSteeringExtractor(
             target_dim=sample_hidden_dim,

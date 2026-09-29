@@ -1,5 +1,5 @@
 """
-Tests for src/knowledge_base.py
+Tests for machine_poi/knowledge_base.py
 
 Tests for:
 - QuranKnowledgeBase (ChromaDB integration)
@@ -11,7 +11,7 @@ import pytest
 import numpy as np
 from unittest.mock import Mock, patch
 
-from src.quran_embeddings import QuranEmbeddings
+from machine_poi.quran_embeddings import QuranEmbeddings
 
 
 class TestQuranKnowledgeBaseInit:
@@ -19,7 +19,7 @@ class TestQuranKnowledgeBaseInit:
 
     def test_init_creates_client(self, temp_db_dir):
         """Test that initialization creates ChromaDB client."""
-        from src.knowledge_base import QuranKnowledgeBase
+        from machine_poi.knowledge_base import QuranKnowledgeBase
         
         with patch.object(
             QuranKnowledgeBase, "__init__", lambda self, **kwargs: None
@@ -32,9 +32,9 @@ class TestQuranKnowledgeBaseInit:
 
     def test_init_creates_collections(self, temp_db_dir, mock_sentence_transformer):
         """Test that initialization creates expected collections."""
-        from src.knowledge_base import QuranKnowledgeBase
+        from machine_poi.knowledge_base import QuranKnowledgeBase
         
-        with patch("src.knowledge_base.QuranEmbeddings") as MockEmbeddings:
+        with patch("machine_poi.knowledge_base.QuranEmbeddings") as MockEmbeddings:
             mock_embedder = Mock(spec=QuranEmbeddings)
             mock_embedder.load_model = Mock()
             MockEmbeddings.return_value = mock_embedder
@@ -55,9 +55,9 @@ class TestIndexBuilding:
     @pytest.fixture
     def mock_kb(self, temp_db_dir, sample_embedding_dim):
         """Create a mocked knowledge base."""
-        from src.knowledge_base import QuranKnowledgeBase
+        from machine_poi.knowledge_base import QuranKnowledgeBase
         
-        with patch("src.knowledge_base.QuranEmbeddings") as MockEmbeddings:
+        with patch("machine_poi.knowledge_base.QuranEmbeddings") as MockEmbeddings:
             # Mock embedder
             mock_embedder = Mock(spec=QuranEmbeddings)
             mock_embedder.load_model = Mock()
@@ -102,9 +102,9 @@ class TestQuerying:
     @pytest.fixture
     def populated_kb(self, temp_db_dir, sample_embedding_dim):
         """Create a knowledge base with test data."""
-        from src.knowledge_base import QuranKnowledgeBase
+        from machine_poi.knowledge_base import QuranKnowledgeBase
         
-        with patch("src.knowledge_base.QuranEmbeddings") as MockEmbeddings:
+        with patch("machine_poi.knowledge_base.QuranEmbeddings") as MockEmbeddings:
             # Mock embedder
             mock_embedder = Mock(spec=QuranEmbeddings)
             mock_embedder.load_model = Mock()
@@ -216,9 +216,9 @@ class TestCollectionManagement:
 
     def test_collections_use_cosine_space(self, temp_db_dir):
         """Test that collections are configured for cosine similarity."""
-        from src.knowledge_base import QuranKnowledgeBase
+        from machine_poi.knowledge_base import QuranKnowledgeBase
         
-        with patch("src.knowledge_base.QuranEmbeddings") as MockEmbeddings:
+        with patch("machine_poi.knowledge_base.QuranEmbeddings") as MockEmbeddings:
             mock_embedder = Mock(spec=QuranEmbeddings)
             mock_embedder.load_model = Mock()
             MockEmbeddings.return_value = mock_embedder
@@ -240,9 +240,9 @@ class TestScoreComputation:
 
     def test_distance_to_score_conversion(self, temp_db_dir, sample_embedding_dim):
         """Test that cosine distance is converted to similarity score."""
-        from src.knowledge_base import QuranKnowledgeBase
+        from machine_poi.knowledge_base import QuranKnowledgeBase
         
-        with patch("src.knowledge_base.QuranEmbeddings") as MockEmbeddings:
+        with patch("machine_poi.knowledge_base.QuranEmbeddings") as MockEmbeddings:
             mock_embedder = Mock(spec=QuranEmbeddings)
             mock_embedder.load_model = Mock()
             mock_embedder.create_embeddings.return_value = np.random.randn(
@@ -279,7 +279,7 @@ class TestIntegration:
     @pytest.mark.integration
     def test_full_workflow(self, sample_quran_path, temp_db_dir):
         """Test full workflow: init -> index -> query."""
-        from src.knowledge_base import QuranKnowledgeBase
+        from machine_poi.knowledge_base import QuranKnowledgeBase
         
         # This test would actually load models and index real data
         kb = QuranKnowledgeBase(

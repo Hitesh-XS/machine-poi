@@ -22,7 +22,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.steerer import QuranSteerer
+from machine_poi.steerer import QuranSteerer
 
 
 def run_qualitative_comparison(steerer: QuranSteerer, prompts: list[str]) -> dict:

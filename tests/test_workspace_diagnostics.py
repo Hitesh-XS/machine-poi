@@ -7,7 +7,7 @@ import torch
 
 
 def test_summarize_layer_steering_reports_expected_metrics():
-    from src.workspace_diagnostics import summarize_layer_steering
+    from machine_poi.workspace_diagnostics import summarize_layer_steering
 
     activation = torch.tensor([[[1.0, 0.0], [0.0, 2.0]]])
     steering = torch.tensor([1.0, 0.0])
@@ -22,14 +22,14 @@ def test_summarize_layer_steering_reports_expected_metrics():
 
 
 def test_summarize_layer_steering_validates_hidden_dimension():
-    from src.workspace_diagnostics import summarize_layer_steering
+    from machine_poi.workspace_diagnostics import summarize_layer_steering
 
     with pytest.raises(ValueError):
         summarize_layer_steering(torch.zeros(1, 2, 3), torch.zeros(2))
 
 
 def test_summarize_layer_steering_reports_raw_zero_norms():
-    from src.workspace_diagnostics import summarize_layer_steering
+    from machine_poi.workspace_diagnostics import summarize_layer_steering
 
     diagnostics = summarize_layer_steering(
         activation=torch.zeros(1, 2, 3),
@@ -50,7 +50,7 @@ def _causal_uniform_attention(seq_len: int) -> torch.Tensor:
 
 
 def test_connection_bivectors_are_antisymmetric():
-    from src.workspace_diagnostics import connection_bivectors
+    from machine_poi.workspace_diagnostics import connection_bivectors
 
     torch.manual_seed(0)
     seq_len, dim = 5, 4
@@ -65,7 +65,7 @@ def test_connection_bivectors_are_antisymmetric():
 
 
 def test_connection_bivectors_validates_shapes():
-    from src.workspace_diagnostics import connection_bivectors
+    from machine_poi.workspace_diagnostics import connection_bivectors
 
     with pytest.raises(ValueError):
         connection_bivectors(torch.ones(3, 2), torch.zeros(3, 4), torch.zeros(3, 4))
@@ -76,7 +76,7 @@ def test_connection_bivectors_validates_shapes():
 
 
 def test_attention_transport_coplanar_generators_commute():
-    from src.workspace_diagnostics import summarize_attention_transport
+    from machine_poi.workspace_diagnostics import summarize_attention_transport
 
     # All queries along e1 and all value deviations along e2 keep every ω_t
     # in the e1∧e2 plane, so successive generators commute exactly: ρ = 0.
@@ -100,7 +100,7 @@ def test_attention_transport_coplanar_generators_commute():
 
 
 def test_attention_transport_noncoplanar_generators_do_not_commute():
-    from src.workspace_diagnostics import summarize_attention_transport
+    from machine_poi.workspace_diagnostics import summarize_attention_transport
 
     torch.manual_seed(1)
     seq_len, dim = 6, 4
@@ -118,7 +118,7 @@ def test_attention_transport_noncoplanar_generators_do_not_commute():
 
 
 def test_attention_transport_identical_values_is_flat():
-    from src.workspace_diagnostics import summarize_attention_transport
+    from machine_poi.workspace_diagnostics import summarize_attention_transport
 
     # Identical values give zero deviations, hence ω_t = 0 everywhere:
     # flat connection, no curvature, identity transport, zero holonomy.
@@ -136,7 +136,7 @@ def test_attention_transport_identical_values_is_flat():
 
 
 def test_attention_transport_short_sequence_is_degenerate():
-    from src.workspace_diagnostics import summarize_attention_transport
+    from machine_poi.workspace_diagnostics import summarize_attention_transport
 
     diagnostics = summarize_attention_transport(
         torch.ones(1, 1), torch.ones(1, 4), torch.ones(1, 4)
@@ -148,7 +148,7 @@ def test_attention_transport_short_sequence_is_degenerate():
 
 
 def test_summarize_attention_transport_heads_and_pooling():
-    from src.workspace_diagnostics import (
+    from machine_poi.workspace_diagnostics import (
         pooled_non_abelian_ratio,
         summarize_attention_transport_heads,
     )
@@ -169,7 +169,7 @@ def test_summarize_attention_transport_heads_and_pooling():
 
 
 def test_summarize_attention_transport_heads_validates_shapes():
-    from src.workspace_diagnostics import summarize_attention_transport_heads
+    from machine_poi.workspace_diagnostics import summarize_attention_transport_heads
 
     with pytest.raises(ValueError):
         summarize_attention_transport_heads(
@@ -182,7 +182,7 @@ def test_summarize_attention_transport_heads_validates_shapes():
 
 
 def test_summarize_steering_hooks_skips_incomplete_hooks():
-    from src.workspace_diagnostics import summarize_steering_hooks
+    from machine_poi.workspace_diagnostics import summarize_steering_hooks
 
     hooks = {
         0: SimpleNamespace(

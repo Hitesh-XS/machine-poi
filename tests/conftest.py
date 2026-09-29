@@ -201,7 +201,7 @@ def mock_tokenizer():
 @pytest.fixture
 def steering_vector_extractor(sample_embedding_dim, sample_hidden_dim):
     """Create a SteeringVectorExtractor with test dimensions."""
-    from src.steering_vectors import SteeringVectorExtractor
+    from machine_poi.steering_vectors import SteeringVectorExtractor
     return SteeringVectorExtractor(
         source_dim=sample_embedding_dim,
         target_dim=sample_hidden_dim,
@@ -213,7 +213,7 @@ def steering_vector_extractor(sample_embedding_dim, sample_hidden_dim):
 @pytest.fixture
 def contrastive_extractor(sample_hidden_dim):
     """Create a ContrastiveSteeringExtractor."""
-    from src.steering_vectors import ContrastiveSteeringExtractor
+    from machine_poi.steering_vectors import ContrastiveSteeringExtractor
     return ContrastiveSteeringExtractor(
         target_dim=sample_hidden_dim,
         device="cpu",
@@ -223,7 +223,7 @@ def contrastive_extractor(sample_hidden_dim):
 @pytest.fixture
 def activation_hook(sample_steering_vector):
     """Create an ActivationHook for testing."""
-    from src.llm_wrapper import ActivationHook
+    from machine_poi.llm_wrapper import ActivationHook
     return ActivationHook(
         layer_idx=12,
         steering_vector=sample_steering_vector,

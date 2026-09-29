@@ -55,7 +55,7 @@ class TestQuranLightRAG:
 
     def test_entity_types_defined(self):
         """Test that entity types are properly defined."""
-        from src.lightrag_adapter import QuranLightRAG
+        from machine_poi.lightrag_adapter import QuranLightRAG
         
         expected_types = [
             "prophet", "angel", "virtue", "command", "concept",
@@ -65,7 +65,7 @@ class TestQuranLightRAG:
 
     def test_init_creates_working_dir(self, tmp_path, mock_embedding_func, mock_llm_func):
         """Test that initialization creates the working directory."""
-        from src.lightrag_adapter import QuranLightRAG
+        from machine_poi.lightrag_adapter import QuranLightRAG
         
         working_dir = tmp_path / "test_lightrag"
         rag = QuranLightRAG(
@@ -81,7 +81,7 @@ class TestQuranLightRAG:
 
     def test_requires_embedding_func(self, tmp_path):
         """Test that initialization without embedding_func raises error."""
-        from src.lightrag_adapter import QuranLightRAG
+        from machine_poi.lightrag_adapter import QuranLightRAG
         
         rag = QuranLightRAG(
             working_dir=str(tmp_path / "test_rag"),
@@ -102,7 +102,7 @@ class TestGraphBridgeGenerator:
 
     def test_term_to_entity_mapping_exists(self):
         """Test that TERM_TO_ENTITY mappings are defined."""
-        from src.graph_bridge import GraphBridgeGenerator
+        from machine_poi.graph_bridge import GraphBridgeGenerator
         
         # Check key mappings exist
         assert "debug" in GraphBridgeGenerator.TERM_TO_ENTITY
@@ -115,7 +115,7 @@ class TestGraphBridgeGenerator:
 
     def test_extract_query_terms(self):
         """Test extraction of terms from user queries."""
-        from src.graph_bridge import GraphBridgeGenerator
+        from machine_poi.graph_bridge import GraphBridgeGenerator
         
         # Create mock LightRAG
         mock_lightrag = MagicMock()
@@ -132,7 +132,7 @@ class TestGraphBridgeGenerator:
 
     def test_bridge_relationships_defined(self):
         """Test that bridge relationships are defined."""
-        from src.graph_bridge import GraphBridgeGenerator
+        from machine_poi.graph_bridge import GraphBridgeGenerator
         
         expected_rels = {
             "exemplifies", "teaches", "leads_to", "requires",
@@ -150,7 +150,7 @@ class TestHybridQuranKnowledgeBase:
 
     def test_query_modes_accepted(self):
         """Test that all query modes are valid."""
-        from src.hybrid_knowledge_base import HybridQuranKnowledgeBase
+        from machine_poi.hybrid_knowledge_base import HybridQuranKnowledgeBase
         
         kb = HybridQuranKnowledgeBase()
         
@@ -161,7 +161,7 @@ class TestHybridQuranKnowledgeBase:
 
     def test_hybrid_query_result_structure(self):
         """Test HybridQueryResult dataclass structure."""
-        from src.hybrid_knowledge_base import HybridQueryResult
+        from machine_poi.hybrid_knowledge_base import HybridQueryResult
         
         result = HybridQueryResult(
             vector_results={"verse": []},
@@ -188,16 +188,16 @@ class TestLLMAdapters:
 
     def test_ollama_adapter_creation(self):
         """Test Ollama adapter can be created."""
-        from src.llm_adapters import create_ollama_adapter
+        from machine_poi.llm_adapters import create_ollama_adapter
         
         adapter = create_ollama_adapter(model_name="qwen2.5:7b")
         assert callable(adapter)
 
     def test_local_llm_adapter_creation(self):
         """Test local LLM adapter can be created."""
-        from src.llm_adapters import create_local_llm_adapter
+        from machine_poi.llm_adapters import create_local_llm_adapter
         
-        from src.llm_wrapper import SteeredLLM
+        from machine_poi.llm_wrapper import SteeredLLM
 
         mock_llm = MagicMock(spec=SteeredLLM)
         mock_llm.generate = MagicMock(return_value="Generated text")
@@ -205,11 +205,51 @@ class TestLLMAdapters:
         adapter = create_local_llm_adapter(mock_llm)
         assert callable(adapter)
 
+    def test_gemini_adapter_uses_google_genai_async_client(self, monkeypatch):
+        """The adapter targets google-genai, not the deprecated google-generativeai."""
+        import importlib.util
+        import sys
+        import types
+        from types import SimpleNamespace
+
+        from machine_poi.llm_adapters import create_gemini_adapter
+
+        fake_types = types.ModuleType("google.genai.types")
+        fake_types.Content = lambda role, parts: SimpleNamespace(role=role, parts=parts)
+        fake_types.Part = SimpleNamespace(from_text=lambda *, text: SimpleNamespace(text=text))
+        fake_types.GenerateContentConfig = lambda **kwargs: SimpleNamespace(**kwargs)
+        fake_genai = types.ModuleType("google.genai")
+        fake_genai.types = fake_types
+        fake_genai.Client = MagicMock()
+        generate = AsyncMock(return_value=SimpleNamespace(text="entities"))
+        fake_genai.Client.return_value.aio.models.generate_content = generate
+        if importlib.util.find_spec("google") is None:
+            monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
+        monkeypatch.setitem(sys.modules, "google.genai", fake_genai)
+        monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
+
+        adapter = create_gemini_adapter("gemini-test", api_key="key")
+        history = [{"role": "assistant", "content": "earlier"}]
+        result = asyncio.run(
+            adapter("Extract", system_prompt="rules", history_messages=history, max_tokens=64)
+        )
+
+        assert result == "entities"
+        fake_genai.Client.assert_called_once_with(api_key="key")
+        kwargs = generate.call_args.kwargs
+        assert kwargs["model"] == "gemini-test"
+        assert [(c.role, c.parts[0].text) for c in kwargs["contents"]] == [
+            ("model", "earlier"),
+            ("user", "Extract"),
+        ]
+        assert kwargs["config"].system_instruction == "rules"
+        assert kwargs["config"].max_output_tokens == 64
+
     def test_local_llm_adapter_extracts_without_steering(self):
         """Graph extraction must not run through active steering hooks."""
         import torch
-        from src.llm_adapters import create_local_llm_adapter
-        from src.llm_wrapper import ActivationHook, SteeredLLM
+        from machine_poi.llm_adapters import create_local_llm_adapter
+        from machine_poi.llm_wrapper import ActivationHook, SteeredLLM
 
         llm = SteeredLLM(device="cpu")
         llm.hooks[0] = ActivationHook(0, torch.ones(2), 1.0)
@@ -235,7 +275,7 @@ class TestEntityExtractionPrompts:
 
     def test_prompts_defined(self):
         """Test that all prompts are defined."""
-        from src.prompts.entity_extraction import (
+        from machine_poi.prompts.entity_extraction import (
             ENTITY_EXTRACTION_PROMPT,
             RELATIONSHIP_ENHANCEMENT_PROMPT,
             THEME_BRIDGING_PROMPT,
@@ -247,7 +287,7 @@ class TestEntityExtractionPrompts:
 
     def test_entity_types_in_prompt(self):
         """Test that entity types are mentioned in extraction prompt."""
-        from src.prompts.entity_extraction import ENTITY_EXTRACTION_PROMPT
+        from machine_poi.prompts.entity_extraction import ENTITY_EXTRACTION_PROMPT
         
         # Key entity types should be mentioned
         assert "PROPHET" in ENTITY_EXTRACTION_PROMPT
@@ -264,7 +304,7 @@ class TestSteererIntegration:
 
     def test_steerer_has_graph_params(self):
         """Test that QuranSteerer accepts graph parameters."""
-        from src.steerer import QuranSteerer
+        from machine_poi.steerer import QuranSteerer
         
         # These should not raise
         steerer = QuranSteerer(
@@ -277,7 +317,7 @@ class TestSteererIntegration:
 
     def test_steerer_has_hybrid_kb_attribute(self):
         """Test that QuranSteerer has hybrid_kb attribute."""
-        from src.steerer import QuranSteerer
+        from machine_poi.steerer import QuranSteerer
         
         steerer = QuranSteerer()
         
@@ -287,7 +327,7 @@ class TestSteererIntegration:
 
     def test_generate_domain_bridges_has_use_graph_param(self):
         """Test that generate_domain_bridges accepts use_graph parameter."""
-        from src.steerer import QuranSteerer
+        from machine_poi.steerer import QuranSteerer
         import inspect
         
         sig = inspect.signature(QuranSteerer.generate_domain_bridges)
@@ -305,7 +345,7 @@ class TestConfigUpdates:
 
     def test_steering_defaults_has_graph_settings(self):
         """Test that SteeringDefaults has graph-related settings."""
-        from config import STEERING_DEFAULTS
+        from machine_poi.config import STEERING_DEFAULTS
         
         assert hasattr(STEERING_DEFAULTS, 'graph_chunk_size')
         assert hasattr(STEERING_DEFAULTS, 'graph_top_k')
@@ -314,7 +354,7 @@ class TestConfigUpdates:
 
     def test_lightrag_storage_backends_defined(self):
         """Test that LIGHTRAG_STORAGE_BACKENDS is defined."""
-        from config import LIGHTRAG_STORAGE_BACKENDS
+        from machine_poi.config import LIGHTRAG_STORAGE_BACKENDS
         
         assert "default" in LIGHTRAG_STORAGE_BACKENDS
         assert "production" in LIGHTRAG_STORAGE_BACKENDS

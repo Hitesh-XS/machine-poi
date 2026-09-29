@@ -24,8 +24,8 @@ import argparse
 import torch
 import gc
 import time
-from src import QuranSteerer
-from config import LLM_MODELS, EMBEDDING_MODELS
+from machine_poi import QuranSteerer
+from machine_poi.config import LLM_MODELS, EMBEDDING_MODELS
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -117,21 +117,9 @@ def list_models():
     print(f"{'Model Name':<20} {'Reasoning Mode':<15} {'Description'}")
     print("-" * 70)
 
-    reasoning_info = {
-        "deepseek-r1-1.5b": ("deepseek", "Uses <think>...</think> blocks"),
-        "phi4-mini": ("phi", "Math reasoning, no special tokens"),
-        "qwen3-0.6b": ("qwen3", "Native enable_thinking in template"),
-        "smollm3": (None, "No native reasoning"),
-        "gemma-270m": (None, "No native reasoning"),
-        "qwen2.5-0.5b": (None, "Standard instruct model"),
-        "smollm2-135m": (None, "Compact model, no reasoning"),
-        "smollm2-360m": (None, "Compact model, no reasoning"),
-    }
-
-    for model_name in LLM_MODELS.keys():
-        mode, desc = reasoning_info.get(model_name, (None, "Unknown"))
-        mode_str = mode if mode else "none"
-        print(f"{model_name:<20} {mode_str:<15} {desc}")
+    for model_name, spec in LLM_MODELS.items():
+        mode = spec.get("reasoning", {}).get("mode", "none")
+        print(f"{model_name:<20} {mode:<15} {spec.get('description', '')}")
 
     print("-" * 70)
     print("Use --reasoning to enable native reasoning modes.\n")
@@ -154,7 +142,7 @@ def list_models():
 
 def compare_embeddings(args):
     """Compare embedding models on query-to-Quran retrieval."""
-    from src.quran_embeddings import QuranEmbeddings
+    from machine_poi.quran_embeddings import QuranEmbeddings
     import numpy as np
 
     print(f"\n{'='*70}")
@@ -304,7 +292,7 @@ def main():
         
         # Show reasoning config if applicable
         if args.reasoning and model_name in ["deepseek-r1-1.5b", "qwen3-0.6b", "phi4-mini"]:
-            from src.llm_wrapper import SteeredLLM
+            from machine_poi.llm_wrapper import SteeredLLM
             config = SteeredLLM.REASONING_CONFIGS.get(model_name, {})
             print(f"  Reasoning: {config.get('mode', 'generic')} mode")
             print(f"  Temperature: {config.get('temperature', 0.6)}")

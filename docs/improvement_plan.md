@@ -4,8 +4,9 @@
 [Containment plan](rogue_agent_containment_plan.md) ·
 [Workspace roadmap](global_workspace_improvement_plan.md)
 
-Status: Phase 0 delivered 2026-09-29; later phases proposed. Reviewed at commit
-`8be027d`. Line numbers in the findings refer to that commit.
+Status: Phases 0 and 1 delivered 2026-09-29; later phases proposed. Reviewed at commit
+`8be027d`. Paths and line numbers in the findings refer to that commit; Phase 1
+moved `src/` to `machine_poi/`.
 
 This plan covers the whole repository: the guardian gateway, the steering and
 retrieval library, the CLI, the experiments and the engineering setup. It
@@ -121,7 +122,21 @@ resources stay on the loop they were created on.
 | R7 | Wrap local-adapter generation in `steering_disabled()`. | A test asserts that hooks are disabled during adapter calls. |
 | E3a | Add `ruff check` (default rules) to CI and fix the roughly 100 existing findings. Switch steerer/KB mocks to `spec=`/`create_autospec`. | CI lint job is green. |
 
-### Phase 1: foundations
+### Phase 1: foundations (delivered)
+
+Delivered as one commit per item with regression tests. Choices beyond the table:
+- The package is `machine_poi` with a flat layout, so the guardian demos and
+  `python main.py` still run from a checkout without installing. The `src`
+  import path was dropped without an alias (decision 3). The base package has
+  no dependencies, so there is no separate `guardian` extra, and the vector
+  store ships in `research` because the steerer imports it unconditionally.
+- Experiment scripts keep inserting the repository root into `sys.path` so they
+  run from a checkout; library code no longer does.
+- The Gemma 4 aliases carry no recommended dose, because the calibrated
+  coefficients in `experiments/results` applied to unnormalized vectors.
+- The two transport experiments and the local LightRAG adapter pass
+  `chat_template=False`, so their recorded or hand-built prompt formats are
+  unchanged.
 
 | Item | Change | Acceptance |
 | --- | --- | --- |
@@ -189,9 +204,7 @@ staged enforcement) stay in the [containment plan](rogue_agent_containment_plan.
    the source, edition and terms of `al-quran.txt` (plus a checksum) in a NOTICE.
 2. **Neutral Arabic control corpus (M3).** Pick a corpus whose license permits
    redistribution, or download it at run time.
-3. **Package rename (E1).** Renaming `src` to a real package name breaks
-   `from src...` imports in tests and experiments. It's a one-time mechanical
-   change, but external users of `src.guardian` would need to update.
+3. **Package rename (E1).** Decided: `machine_poi`, clean break, no `src` alias.
 4. **G1 semantics.** Phase 0 implemented the recommendation: already-dispatched
    actions finish while a review is pending. The stricter alternative holds them
    until the review resolves and refunds the reservation, which adds latency and

@@ -49,8 +49,8 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.llm_wrapper import SteeredLLM
-from src.transport_stats import paired_test
+from machine_poi.llm_wrapper import SteeredLLM
+from machine_poi.transport_stats import paired_test
 from experiments.steered_vs_baseline_transport import (
     DEFAULT_PROMPTS,
     NEUTRAL_SENTENCES,
@@ -112,7 +112,9 @@ def run_condition_one_prompt(llm: SteeredLLM, vectors, coefficient: float,
         sum(d.relative_perturbation for d in pointwise.values()) / len(pointwise)
         if pointwise else 0.0
     )
-    text = llm.generate(gen_prompt, max_new_tokens=60, do_sample=False)
+    # gen_prompt was already templated by chat_prompt(); keep that protocol.
+    text = llm.generate(gen_prompt, max_new_tokens=60, do_sample=False,
+                        chat_template=False)
     return {"coefficient": coefficient, "rho": rho, "holonomy": hol,
             "relative_perturbation": rel_pert, "generation": text,
             "layers": layers, "steering": per_layer_steering}

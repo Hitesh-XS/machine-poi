@@ -20,6 +20,8 @@ python -m evals.rogue_agent.run --output /tmp/machine-poi-evaluation.json
 ```
 
 These commands need no model downloads, ML packages, API keys, or external tools.
+To use the gateway from another project, `pip install /path/to/checkout` installs
+`machine_poi` with no dependencies; import it as `from machine_poi.guardian import Gateway`.
 The first demo executes an authorized mock write, pauses an internal send for
 simulated operator approval, then blocks an external recipient. The second sends
 JSON proposals from a separate worker process to the host. All effects are
@@ -47,17 +49,25 @@ The research library supports mean-activation and contrastive vectors, weighted
 verse/passage/surah profiles, ChromaDB retrieval, optional LightRAG graph
 retrieval, and per-layer/per-head diagnostics. Model weights are unchanged.
 
-Install the research dependencies in a virtual environment:
+Install the research extras in a virtual environment:
 
 ```bash
 python -m venv venv
 . venv/bin/activate
-python -m pip install -r requirements.txt
-python main.py --help
+python -m pip install -e ".[research]"
+machine-poi --help        # or: python main.py --help
 ```
 
-The full requirements include service and quantization dependencies. For the
-CPU-only test environment used in CI, follow the [testing guide](docs/testing.md).
+| Extra | Adds |
+| --- | --- |
+| `research` | PyTorch, Transformers, sentence-transformers and ChromaDB for steering and vector retrieval |
+| `graph` | LightRAG graph retrieval and the Ollama provider |
+| `providers` | OpenAI and Gemini clients for graph entity extraction |
+| `quantization` | bitsandbytes for 4-bit and 8-bit loading |
+| `test` | pytest and ruff |
+| `all` | Every runtime extra; `requirements.txt` installs this |
+
+For the CPU-only test environment used in CI, follow the [testing guide](docs/testing.md).
 Actual inference requires model downloads and memory appropriate to the selected
 checkpoint, dtype and context length.
 
@@ -118,14 +128,15 @@ steering defaults off and requires an explicit trusted-corpus opt-in.
 
 | Path | Role |
 | --- | --- |
-| `src/guardian/` | Standard-library policy gateway, contracts, review, state, recovery and audit |
+| `machine_poi/guardian/` | Standard-library policy gateway, contracts, review, state, recovery and audit |
 | `examples/guarded_agent/` | Mock host and JSON proposal worker |
 | `evals/rogue_agent/` | Synthetic action cases, runner and committed report |
-| `src/steerer.py`, `src/llm_wrapper.py` | Research orchestration, model loading and steering hooks |
-| `src/retrieval_context.py`, `src/steering_cache.py` | Quoted/bounded context and numeric steering caches |
-| `src/knowledge_base.py`, `src/hybrid_knowledge_base.py` | Vector and optional graph retrieval |
-| `src/workspace_diagnostics.py`, `src/transport_stats.py` | Activation/transport summaries and paired statistics |
-| `main.py`, `config.py` | Research CLI, model aliases and presets |
+| `machine_poi/steerer.py`, `machine_poi/llm_wrapper.py` | Research orchestration, model loading and steering hooks |
+| `machine_poi/retrieval_context.py`, `machine_poi/steering_cache.py` | Quoted/bounded context and numeric steering caches |
+| `machine_poi/knowledge_base.py`, `machine_poi/hybrid_knowledge_base.py` | Vector and optional graph retrieval |
+| `machine_poi/workspace_diagnostics.py`, `machine_poi/transport_stats.py` | Activation/transport summaries and paired statistics |
+| `machine_poi/cli.py`, `machine_poi/config.py`, `main.py` | Research CLI, model aliases and presets; `main.py` launches the CLI from a checkout |
+| `pyproject.toml`, `ci-constraints.txt` | Package metadata and extras; versions pinned in CI |
 | `experiments/` | Model experiments and historical results |
 | `tests/`, `.github/workflows/containment.yml` | Regression tests and CI |
 

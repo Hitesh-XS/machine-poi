@@ -4,7 +4,7 @@ Steered vs Baseline Attention-Transport Comparison
 
 Measures whether Quran-derived activation steering changes a model's
 CONTEXT ROUTING — not just where representations sit — using the discrete
-Cartan curvature diagnostics in src/workspace_diagnostics.py:
+Cartan curvature diagnostics in machine_poi/workspace_diagnostics.py:
 
   - non-abelian ratio ρ: fraction of attention-transport curvature that
     comes from non-commuting local transport generators (order sensitivity)
@@ -52,13 +52,13 @@ import torch
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.llm_wrapper import ActivationHook, SteeredLLM
-from src.transport_stats import paired_test
-from src.workspace_diagnostics import pooled_non_abelian_ratio
+from machine_poi.llm_wrapper import ActivationHook, SteeredLLM
+from machine_poi.transport_stats import paired_test
+from machine_poi.workspace_diagnostics import pooled_non_abelian_ratio
 
 try:
     # Preferred: the project's own workspace layer band (40-70% depth).
-    from src.steerer import select_workspace_layers
+    from machine_poi.steerer import select_workspace_layers
 except ImportError:
     # steerer pulls in retrieval dependencies (chromadb, sentence-transformers);
     # replicate its 40-70% depth band so this experiment needs only torch+transformers.
@@ -76,7 +76,7 @@ except ImportError:
 # declarative sentences, questions, negation/contrast constructions, and
 # short technical/mundane statements. n=16 is still small for a paired
 # permutation test (2^16 = 65536 sign patterns, still enumerated exactly by
-# src/transport_stats.sign_permutation_test), but it is 4x the previous
+# machine_poi/transport_stats.sign_permutation_test), but it is 4x the previous
 # default and lets bootstrap_ci produce a meaningful interval instead of a
 # near-point estimate.
 DEFAULT_PROMPTS = [
@@ -191,7 +191,7 @@ def build_steering_vectors(
 
     Subtracting a neutral-corpus mean removes the generic component shared
     by all hidden states, leaving the verse-specific direction — the
-    contrastive approach of Rimsky et al. (2024) that src/steering_vectors.py
+    contrastive approach of Rimsky et al. (2024) that machine_poi/steering_vectors.py
     implements for the retrieval stack. Pass neutral_texts=None for the
     legacy raw mean activation of the verses alone.
     """
@@ -405,8 +405,11 @@ def main():
         print("  SAMPLE GENERATIONS (first prompt)")
         print(f"{'='*74}")
         with llm.steering_disabled():
-            base_text = llm.generate(prompt, max_new_tokens=60, do_sample=False)
-        steered_text = llm.generate(prompt, max_new_tokens=60, do_sample=False)
+            # Recorded protocol: prompts are sent without a chat template.
+            base_text = llm.generate(prompt, max_new_tokens=60, do_sample=False,
+                                     chat_template=False)
+        steered_text = llm.generate(prompt, max_new_tokens=60, do_sample=False,
+                                    chat_template=False)
         print(f"  baseline: {base_text[:300]}")
         print(f"  steered:  {steered_text[:300]}")
         results["generation"] = {"baseline": base_text, "steered": steered_text}

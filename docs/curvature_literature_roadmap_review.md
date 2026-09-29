@@ -10,7 +10,7 @@ re-run these literature studies. Read the [committed model results](../experimen
 for the observed collapse and language/persona spillover, and the
 [testing guide](testing.md) for what the new runtime tests establish.
 
-**Purpose:** This document maps recent (2025–2026) literature on curvature, manifolds, and geometric attention onto Machine-POI's existing roadmap — specifically the [Global Workspace Improvement Plan](global_workspace_improvement_plan.md) and the attention-transport diagnostics already implemented in `src/workspace_diagnostics.py` and `experiments/gpt_on_manifolds_v4.py`.
+**Purpose:** This document maps recent (2025–2026) literature on curvature, manifolds, and geometric attention onto Machine-POI's existing roadmap — specifically the [Global Workspace Improvement Plan](global_workspace_improvement_plan.md) and the attention-transport diagnostics already implemented in `machine_poi/workspace_diagnostics.py` and `experiments/gpt_on_manifolds_v4.py`.
 
 ---
 
@@ -20,9 +20,9 @@ Machine-POI's roadmap has three geometry-adjacent workstreams already **implemen
 
 | Roadmap item | Status | File |
 |---|---|---|
-| Workspace-aware layer selection | Implemented | `src/steerer.py` (`select_workspace_layers()`) |
-| Pointwise steering diagnostics (norm, cosine, projection) | Implemented | `src/workspace_diagnostics.py` |
-| **Attention-transport (curvature) diagnostics** — non-abelian ratio ρ, holonomy, discrete Cartan curvature Ω = dω + ω∧ω | Implemented | `src/workspace_diagnostics.py`, `experiments/gpt_on_manifolds_v4.py`, `experiments/steered_vs_baseline_transport.py` |
+| Workspace-aware layer selection | Implemented | `machine_poi/steerer.py` (`select_workspace_layers()`) |
+| Pointwise steering diagnostics (norm, cosine, projection) | Implemented | `machine_poi/workspace_diagnostics.py` |
+| **Attention-transport (curvature) diagnostics** — non-abelian ratio ρ, holonomy, discrete Cartan curvature Ω = dω + ω∧ω | Implemented | `machine_poi/workspace_diagnostics.py`, `experiments/gpt_on_manifolds_v4.py`, `experiments/steered_vs_baseline_transport.py` |
 
 The curvature diagnostics treat each attention head as a **discrete connection** on a sequence fiber bundle: attention weights define a connection bivector ω_t, and its variation (dω) vs. commutator (ω∧ω) terms separate "position-dependent but commutative" heads from "genuinely order-sensitive" heads. `gpt_on_manifolds_v4.py` additionally trains a toy GPT with embeddings projected onto **hyperbolic (Poincaré), spherical, product H×S, and Grassmannian manifolds**, using a Riemannian natural-gradient optimizer.
 

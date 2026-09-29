@@ -14,10 +14,7 @@ import chromadb
 
 from .quran_embeddings import QuranEmbeddings
 
-# Import config
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import STEERING_DEFAULTS
+from .config import STEERING_DEFAULTS
 
 # Setup logger
 logger = logging.getLogger("machine_poi.knowledge_base")

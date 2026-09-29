@@ -5,6 +5,7 @@ Provides hooks into transformer layers to enable activation steering
 during inference without modifying model weights.
 """
 
+import importlib.util
 import logging
 import math
 import re
@@ -16,10 +17,13 @@ from typing import Optional, Dict, List, Union, Tuple, Any
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
+    BitsAndBytesConfig,
     PreTrainedModel,
     PreTrainedTokenizer,
 )
 from contextlib import contextmanager
+
+from .config import LLM_MODELS
 
 
 # Setup module logger
@@ -27,52 +31,14 @@ logger = logging.getLogger("machine_poi.llm_wrapper")
 
 
 
-# Model configurations for supported architectures
-MODEL_CONFIGS = {
-    "deepseek": {
-        "layer_name_pattern": "model.layers.{layer_idx}",
-        "hidden_size_attr": "hidden_size",
-        "num_layers_attr": "num_hidden_layers",
-        "residual_stream": "post_attention_layernorm",  # Where to inject
-    },
-    "qwen": {
-        "layer_name_pattern": "model.layers.{layer_idx}",
-        "hidden_size_attr": "hidden_size",
-        "num_layers_attr": "num_hidden_layers",
-        "residual_stream": "post_attention_layernorm",
-    },
-    "phi": {
-        "layer_name_pattern": "model.layers.{layer_idx}",
-        "hidden_size_attr": "hidden_size",
-        "num_layers_attr": "num_hidden_layers",
-        "residual_stream": "post_attention_layernorm",
-    },
-    "gemma": {
-        "layer_name_pattern": "model.layers.{layer_idx}",
-        "hidden_size_attr": "hidden_size",
-        "num_layers_attr": "num_hidden_layers",
-        "residual_stream": "post_attention_layernorm",
-    },
-    "smollm": {
-        "layer_name_pattern": "model.layers.{layer_idx}",
-        "hidden_size_attr": "hidden_size",
-        "num_layers_attr": "num_hidden_layers",
-        "residual_stream": "post_attention_layernorm",
-    },
-    "llama": {
-        "layer_name_pattern": "model.layers.{layer_idx}",
-        "hidden_size_attr": "hidden_size",
-        "num_layers_attr": "num_hidden_layers",
-        "residual_stream": "post_attention_layernorm",
-    },
-    "mistral": {
-        "layer_name_pattern": "model.layers.{layer_idx}",
-        "hidden_size_attr": "hidden_size",
-        "num_layers_attr": "num_hidden_layers",
-        "residual_stream": "post_attention_layernorm",
-    },
+# Every supported architecture exposes decoder layers at model.layers.N with
+# hidden_size/num_hidden_layers on its (text) config. _get_layer_module also
+# tries the paths multimodal wrappers such as Gemma 4 use.
+DECODER_LAYOUT = {
+    "layer_name_pattern": "model.layers.{layer_idx}",
+    "hidden_size_attr": "hidden_size",
+    "num_layers_attr": "num_hidden_layers",
 }
-
 
 
 class LLMWrapperError(Exception):
@@ -91,15 +57,8 @@ class ModelNotLoadedError(LLMWrapperError):
 
 
 def get_model_config(model_name: str) -> Dict[str, Any]:
-    """Get configuration for a model architecture."""
-    model_name_lower = model_name.lower()
-
-    for key in MODEL_CONFIGS:
-        if key in model_name_lower:
-            return MODEL_CONFIGS[key]
-
-    # Default to llama-like architecture
-    return MODEL_CONFIGS["llama"]
+    """Return the decoder layout; all supported architectures share it."""
+    return dict(DECODER_LAYOUT)
 
 
 def kv_share_source_map(
@@ -132,6 +91,10 @@ def kv_share_source_map(
         if layer_types[layer_idx] in last_seen
     }
 
+
+
+def bitsandbytes_available() -> bool:
+    return importlib.util.find_spec("bitsandbytes") is not None
 
 
 def synchronized(method):
@@ -245,47 +208,16 @@ class SteeredLLM:
     """
     Wraps a HuggingFace LLM to enable activation steering.
 
-    Supports:
-    - DeepSeek-R1-Distill-Qwen-1.5B
-    - Microsoft Phi-4-mini-reasoning
-    - Qwen3-0.6B
-    - SmolLM3
-    - Gemma 3 270M
+    Registered aliases, checkpoints and reasoning settings come from
+    ``machine_poi.config.LLM_MODELS``; any other Hugging Face path also works
+    if it uses a supported decoder layout.
     """
 
-    SUPPORTED_MODELS = {
-        "deepseek-r1-1.5b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
-        "phi4-mini": "microsoft/Phi-4-mini-reasoning",
-        "qwen3-0.6b": "Qwen/Qwen3-0.6B",
-        "smollm3": "HuggingFaceTB/SmolLM3-3B",
-        "gemma-270m": "google/gemma-3-270m-it",
-        # Fallbacks/alternatives
-        "qwen2.5-0.5b": "Qwen/Qwen2.5-0.5B-Instruct",
-        "smollm2-135m": "HuggingFaceTB/SmolLM2-135M-Instruct",
-        "smollm2-360m": "HuggingFaceTB/SmolLM2-360M-Instruct",
-    }
-
-    # Model reasoning configurations (from official documentation)
+    SUPPORTED_MODELS = {alias: spec["hf_path"] for alias, spec in LLM_MODELS.items()}
     REASONING_CONFIGS = {
-        "deepseek-r1-1.5b": {
-            "mode": "deepseek",  # Uses <think>...</think> blocks
-            "temperature": 0.6,
-            "top_p": 0.95,
-            "force_think_prefix": True,  # Enforce <think>\n at start
-        },
-        "phi4-mini": {
-            "mode": "phi",  # Math-focused, no special tokens
-            "temperature": 0.8,
-            "top_p": 0.95,
-            "force_think_prefix": False,
-        },
-        "qwen3-0.6b": {
-            "mode": "qwen3",  # Native enable_thinking in chat template
-            "temperature": 0.6,
-            "top_p": 0.95,
-            "top_k": 20,
-            "force_think_prefix": False,  # Handled by tokenizer
-        },
+        alias: dict(spec["reasoning"])
+        for alias, spec in LLM_MODELS.items()
+        if "reasoning" in spec
     }
 
     def __init__(
@@ -338,6 +270,8 @@ class SteeredLLM:
         self.tokenizer: Optional[PreTrainedTokenizer] = None
         self.config = None
         self.hooks: Dict[int, ActivationHook] = {}
+        # Effective decoding settings of the latest generate call.
+        self.last_generation_settings: Dict[str, Any] = {}
         self.hook_handles: List = []
 
     @synchronized
@@ -352,11 +286,17 @@ class SteeredLLM:
             "dtype": self.torch_dtype,  # Was torch_dtype, deprecated
         }
 
-        if self.load_in_8bit:
-            load_kwargs["load_in_8bit"] = True
-            load_kwargs["device_map"] = "auto"
-        elif self.load_in_4bit:
-            load_kwargs["load_in_4bit"] = True
+        if self.load_in_8bit or self.load_in_4bit:
+            # Passing load_in_*bit directly to from_pretrained is deprecated.
+            if not bitsandbytes_available():
+                raise ImportError(
+                    "4-bit and 8-bit loading need bitsandbytes: "
+                    "pip install 'machine-poi[quantization]'"
+                )
+            if self.load_in_8bit:
+                load_kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
+            else:
+                load_kwargs["quantization_config"] = BitsAndBytesConfig(load_in_4bit=True)
             load_kwargs["device_map"] = "auto"
         else:
             load_kwargs["device_map"] = self.device
@@ -741,6 +681,46 @@ class SteeredLLM:
             )
         return diagnostics
 
+    def format_prompt(
+        self,
+        prompt: str,
+        reasoning_mode: bool = False,
+        chat_template: Optional[bool] = None,
+    ) -> Tuple[str, bool]:
+        """Format a prompt as a single user turn with the tokenizer's chat template.
+
+        ``chat_template=None`` applies the template when the tokenizer has one
+        (instruct checkpoints), ``True`` requires one and ``False`` leaves the
+        prompt unchanged. Returns the text and whether a template was applied.
+        """
+        has_template = bool(getattr(self.tokenizer, "chat_template", None))
+        if chat_template and not has_template:
+            raise ValueError("The tokenizer has no chat template")
+        reasoning = self.reasoning_config if reasoning_mode else None
+        think_prefix = bool(reasoning and reasoning.get("force_think_prefix"))
+        if not (has_template if chat_template is None else chat_template):
+            if think_prefix and not prompt.lstrip().startswith("<think>"):
+                prompt = "<think>\n" + prompt
+            return prompt, False
+
+        options = {}
+        if (self.reasoning_config or {}).get("mode") == "qwen3":
+            # Qwen3 templates think by default; follow the requested mode.
+            options["enable_thinking"] = bool(reasoning)
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            text = self.tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True, **options
+            )
+        except TypeError:
+            text = self.tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+        if think_prefix and not text.rstrip().endswith("<think>"):
+            # DeepSeek-R1 documentation: start the response with <think>.
+            text += "<think>\n"
+        return text, True
+
     @synchronized
     def generate(
         self,
@@ -751,6 +731,7 @@ class SteeredLLM:
         do_sample: bool = True,
         reasoning_mode: bool = False,
         seed: Optional[int] = None,
+        chat_template: Optional[bool] = None,
         **kwargs,
     ) -> str:
         """
@@ -764,6 +745,8 @@ class SteeredLLM:
             do_sample: Whether to sample (vs greedy)
             reasoning_mode: Whether to enable native reasoning mode for supported models
             seed: Seed torch's generators before decoding, for paired comparisons
+            chat_template: See format_prompt; None applies the tokenizer's
+                template when it has one
 
         Returns:
             Generated text
@@ -777,63 +760,14 @@ class SteeredLLM:
         if self.model is None:
             self.load_model()
 
-        # Apply model-specific reasoning configuration
-        if reasoning_mode and self.reasoning_config:
-            config = self.reasoning_config
-            mode = config.get("mode")
-            
-            # Use model-specific recommended parameters
-            temperature = config.get("temperature", temperature)
-            top_p = config.get("top_p", top_p)
+        # Model-specific reasoning settings from the registry
+        reasoning = self.reasoning_config if reasoning_mode else None
+        if reasoning:
+            temperature = reasoning.get("temperature", temperature)
+            top_p = reasoning.get("top_p", top_p)
             do_sample = True  # Reasoning models need sampling
-            
-            # Apply top_k if specified (Qwen3)
-            if "top_k" in config:
-                kwargs["top_k"] = config["top_k"]
-            
-            # Handle model-specific reasoning formats
-            if mode == "deepseek":
-                # DeepSeek-R1: Force thinking with <think> prefix
-                # Per documentation: "enforce the model to initiate its response with <think>\n"
-                if config.get("force_think_prefix"):
-                    stripped = prompt.lstrip()
-                    if not stripped.startswith("<think>"):
-                        prompt = "<think>\n" + prompt
-            
-            elif mode == "qwen3":
-                # Qwen3: Uses enable_thinking in chat template
-                # Apply chat template with thinking enabled
-                messages = [{"role": "user", "content": prompt}]
-                try:
-                    prompt = self.tokenizer.apply_chat_template(
-                        messages,
-                        tokenize=False,
-                        add_generation_prompt=True,
-                        enable_thinking=True,
-                    )
-                except TypeError:
-                    # Fallback if enable_thinking not supported
-                    prompt = self.tokenizer.apply_chat_template(
-                        messages,
-                        tokenize=False,
-                        add_generation_prompt=True,
-                    )
-            
-            elif mode == "phi":
-                # Phi-4-mini-reasoning: Standard math reasoning
-                # Uses chat format, add math prompt if relevant
-                messages = [{"role": "user", "content": prompt}]
-                try:
-                    prompt = self.tokenizer.apply_chat_template(
-                        messages,
-                        tokenize=False,
-                        add_generation_prompt=True,
-                    )
-                except Exception:
-                    pass  # Use raw prompt
-            
-            # Respect user-provided max_new_tokens; no forced bump
-        
+            if "top_k" in reasoning:
+                kwargs["top_k"] = reasoning["top_k"]
         elif reasoning_mode:
             # Generic reasoning mode for models without native support
             temperature = min(temperature, 0.6)
@@ -841,33 +775,39 @@ class SteeredLLM:
             if "step by step" not in prompt.lower():
                 prompt += "\nLet's think step by step:\n"
 
-        inputs = self.tokenizer(prompt, return_tensors="pt")
+        prompt, templated = self.format_prompt(prompt, reasoning_mode, chat_template)
+        # Templated text already contains BOS and other special tokens.
+        inputs = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=not templated)
         inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
 
+        # Sampling parameters only apply when sampling; greedy decoding
+        # ignores them and transformers warns if they are passed.
+        sampling = {"temperature": temperature, "top_p": top_p} if do_sample else {}
+        self.last_generation_settings = {
+            "max_new_tokens": max_new_tokens,
+            "do_sample": do_sample,
+            "seed": seed,
+            "reasoning_mode": reasoning_mode,
+            "chat_template": templated,
+            **sampling,
+            **{key: kwargs[key] for key in ("top_k",) if key in kwargs},
+        }
         if seed is not None:
             torch.manual_seed(seed)
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
                 do_sample=do_sample,
                 pad_token_id=self.tokenizer.pad_token_id,
+                **sampling,
                 **kwargs,
             )
 
-        # Decode only new tokens
+        # Decode only new tokens. Qwen3 reasoning output keeps its
+        # <think>...</think> block for the caller to parse.
         new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
-        output = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
-        
-        # For Qwen3, optionally parse thinking content
-        if reasoning_mode and self.reasoning_config and self.reasoning_config.get("mode") == "qwen3":
-            # Output may contain <think>...</think> blocks
-            # Return full output (including thinking) - user can parse if needed
-            pass
-        
-        return output
+        return self.tokenizer.decode(new_tokens, skip_special_tokens=True)
 
     @synchronized
     def compare_outputs(

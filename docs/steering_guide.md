@@ -11,7 +11,7 @@ pass through the guardian.
 ## Generate with mean-activation steering
 
 ```python
-from src import QuranSteerer
+from machine_poi import QuranSteerer
 
 steerer = QuranSteerer(
     llm_model="qwen2.5-0.5b",
@@ -23,15 +23,13 @@ steerer.prepare_quran_steering(
     chunk_by="verse", sample_size=8, cache_path="vectors/example_mean.npz"
 )
 
-# Use the selected instruct checkpoint's chat template consistently.
-prompt = steerer.llm.tokenizer.apply_chat_template(
-    [{"role": "user", "content": "How should we resolve a disagreement?"}],
-    tokenize=False,
-    add_generation_prompt=True,
+# Both arms share the prompt, chat template and seed.
+steered, baseline = steerer.compare(
+    "How should we resolve a disagreement?", max_new_tokens=100
 )
-print(steerer.generate(prompt, max_new_tokens=100))
+print(steered)
 print(steerer.last_run_diagnostics)
-print(steerer.generate_unsteered(prompt, max_new_tokens=100))
+print(baseline)
 ```
 
 This is a small API demonstration, not a calibrated behavioral evaluation.
@@ -46,9 +44,14 @@ negative_texts)` constructs normalized differences between activation means.
 can mix language, style and content effects; it does not isolate moral behavior
 without appropriate controls.
 
-The wrapper only applies certain chat templates automatically in reasoning mode.
-For other instruct-model comparisons, provide consistent formatting explicitly.
-A fluent baseline is a prerequisite for interpreting a steering comparison.
+Generation wraps the prompt as one user turn in the tokenizer's chat template
+whenever the tokenizer has one, so pass plain text rather than templated text.
+Pass `chat_template=False` to send a prompt unchanged, for example a transcript
+you have already formatted. Templated text is tokenized without adding special
+tokens again, which avoids a doubled BOS. For Qwen3, `reasoning_mode` switches the
+template's thinking on or off; DeepSeek-R1 reasoning starts the response with
+`<think>`. The transport experiments keep their recorded prompt formatting. A
+fluent baseline is a prerequisite for interpreting a steering comparison.
 
 ## Retrieval and dynamic steering
 
@@ -91,14 +94,14 @@ Use the async API for graph-enhanced generation. This standalone example expects
 `GRAPH_MODEL` to name a model accessible to the configured OpenAI account and
 `OPENAI_API_KEY` to be available to its client. Indexing can make many provider
 calls. Ollama and Gemini adapter factories are also available in
-`src/llm_adapters.py`; configure their model, endpoint and credentials for your host.
+`machine_poi/llm_adapters.py`; configure their model, endpoint and credentials for your host.
 
 ```python
 import asyncio
 import os
 
-from src import QuranSteerer
-from src.llm_adapters import create_openai_adapter
+from machine_poi import QuranSteerer
+from machine_poi.llm_adapters import create_openai_adapter
 
 async def main():
     steerer = QuranSteerer(
@@ -169,6 +172,10 @@ outputs from the same final prompt and random seed (`seed` defaults to
 the steered run's scalar summaries in `last_run_diagnostics`. It does not assemble
 graph context; use `generate_with_graph` for that. `SteeredLLM.generate` raises
 `TypeError` for retrieval options such as `mra_mode` instead of ignoring them.
+`last_run_settings` records what the latest `generate`, `compare` or graph run
+actually used: seed, greedy or sampling (with the effective temperature, which
+reasoning mode can override), chat templating, retrieval, a SHA-256 of the final
+prompt and the steering configuration. Record it next to any output you report.
 
 ## Model loading and cache migration
 
@@ -220,6 +227,7 @@ configures the graph provider and enables graph index building with
 | `--quran-path`, `--cache-dir` | Corpus and steering-cache paths |
 | `--device`, `--quantize` | Device (`cpu`, `cuda`, `mps`) and optional `4bit`/`8bit` loading |
 | `--max-tokens`, `--temperature` | Generation options, forwarded on every CLI path |
+| `--seed`, `--greedy` | Seed shared by both comparison arms (default 42); decode greedily instead of sampling. Comparisons print the settings used |
 | `--interactive`, `--compare`, `--prompt` | Interactive generation, predefined comparisons, or one comparison prompt |
 | `--reasoning` | Model-specific prompt/decoding behavior; inspect it when matching experimental conditions |
 | `--init-db`, `--mra` | Build vector index; add MRA context on every generation path |
@@ -236,7 +244,10 @@ baseline.
 
 These are the repository's convenience mappings, not a current compatibility or
 quality certification for every checkpoint/dependency combination. Custom paths
-also require a supported model layout and sufficient memory.
+also require a supported model layout and sufficient memory. `LLM_MODELS` and
+`EMBEDDING_MODELS` in `machine_poi/config.py` are the only registries; the CLI,
+`SteeredLLM`, `QuranEmbeddings` and `compare_models.py` read them. Hidden size and
+layer count come from the loaded checkpoint.
 
 | LLM alias | Checkpoint |
 | --- | --- |
@@ -245,6 +256,8 @@ also require a supported model layout and sufficient memory.
 | `qwen3-0.6b` | `Qwen/Qwen3-0.6B` |
 | `smollm3` | `HuggingFaceTB/SmolLM3-3B` |
 | `gemma-270m` | `google/gemma-3-270m-it` |
+| `gemma-4-e2b` | `google/gemma-4-E2B-it` (no recommended dose; uses the preset) |
+| `gemma-4-e4b` | `google/gemma-4-E4B-it` (no recommended dose; uses the preset) |
 | `qwen2.5-0.5b` | `Qwen/Qwen2.5-0.5B-Instruct` |
 | `smollm2-135m` | `HuggingFaceTB/SmolLM2-135M-Instruct` |
 | `smollm2-360m` | `HuggingFaceTB/SmolLM2-360M-Instruct` |

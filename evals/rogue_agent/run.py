@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from examples.guarded_agent.host import build_host
-from src.guardian import ProposedAction
+from machine_poi.guardian import ProposedAction
 
 
 async def evaluate(cases):

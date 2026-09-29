@@ -13,10 +13,7 @@ from typing import Optional, Union, List, Dict, Literal
 import numpy as np
 import torch
 
-# Import config
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import STEERING_DEFAULTS
+from .config import EMBEDDING_MODELS, STEERING_DEFAULTS
 
 # Setup module logger
 logger = logging.getLogger("machine_poi.quran_embeddings")
@@ -70,14 +67,7 @@ class QuranEmbeddings:
     - Alibaba-NLP/gte-Qwen2-7B-instruct: Large-scale instruction-tuned embeddings
     """
 
-    SUPPORTED_MODELS = {
-        "bge-m3": "BAAI/bge-m3",
-        "qwen-embedding": "Alibaba-NLP/gte-Qwen2-7B-instruct",
-        "multilingual-e5": "intfloat/multilingual-e5-large-instruct",
-        "multilingual-e5-large": "intfloat/multilingual-e5-large",
-        "paraphrase-mpnet": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
-        "paraphrase-minilm": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-    }
+    SUPPORTED_MODELS = {alias: spec["hf_path"] for alias, spec in EMBEDDING_MODELS.items()}
 
     # Standard verse counts for all 114 Surahs
     SURAH_VERSE_COUNTS = [

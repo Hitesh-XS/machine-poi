@@ -9,10 +9,11 @@ models or service credentials.
 
 ## Guardian only
 
-Python 3.10+ and pytest are sufficient:
+Python 3.10+ and the `test` extra are sufficient; the base package has no
+dependencies, and CI checks that the guardian runs without the ML stack:
 
 ```bash
-python -m pip install pytest==9.1.1
+python -m pip install -c ci-constraints.txt -e ".[test]"
 python -m pytest tests/guardian --confcutdir=tests/guardian -q
 python -m examples.guarded_agent.host
 python -m examples.guarded_agent.process_demo
@@ -25,27 +26,28 @@ does not test sandbox escape resistance.
 
 ## Full offline runtime tests
 
-CI uses Python 3.12 with a CPU PyTorch wheel and pinned top-level test dependencies:
+CI uses Python 3.12 with a CPU PyTorch wheel, the `research`, `graph` and `test`
+extras, and the versions pinned in `ci-constraints.txt`:
 
 ```bash
 python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-python -m pip install -r requirements-test.txt
+python -m pip install -c ci-constraints.txt -e ".[research,graph,test]"
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -m pytest -q -m 'not slow and not integration'
 ```
 
 Dependency installation needs network access. The selected tests use local
-fixtures/mocks and run with model-hub downloads disabled. The test requirements
-are not a complete transitive dependency lock or the full optional-service
-installation in `requirements.txt`.
+fixtures/mocks and run with model-hub downloads disabled. `ci-constraints.txt`
+pins top-level packages only; it is not a complete transitive lock, and CI does
+not install the `providers` or `quantization` extras.
 
 ## Lint
 
-CI runs ruff at the version pinned in `requirements-test.txt`. `ruff.toml` selects
+CI runs ruff at the version pinned in `ci-constraints.txt`. `ruff.toml` selects
 pyflakes and syntax-level pycodestyle rules explicitly, because ruff's default
 selection varies by version:
 
 ```bash
-python -m pip install "$(grep -E '^ruff==' requirements-test.txt)"
+python -m pip install -c ci-constraints.txt ruff
 ruff check .
 ```
 
@@ -59,7 +61,7 @@ For a targeted run, use the same environment and select a test file:
 ```bash
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -m pytest tests/test_runtime_safety.py -q
 python -m pytest tests/guardian --confcutdir=tests/guardian \
-    --cov=src.guardian --cov-branch --cov-report=term-missing
+    --cov=machine_poi.guardian --cov-branch --cov-report=term-missing
 ```
 
 `make test` selects the fast suite. `pytest.ini` excludes integration tests by
