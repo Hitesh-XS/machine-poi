@@ -33,10 +33,13 @@ print(baseline)
 ```
 
 This is a small API demonstration, not a calibrated behavioral evaluation.
-`prepare_quran_steering` pools unsteered activations and normalizes the mean at
-each layer. `prepare_quran_persona` instead combines normalized verse, paragraph
-and surah means with default weights 0.50, 0.35 and 0.15, then normalizes the result.
-Use one preparation method for the experiment being measured.
+`prepare_quran_steering` pools unsteered activations and, by default
+(`recipe="centered"`), normalizes `mean(Quran) - mean(neutral Arabic control)` at
+each layer. Without centering, the mean is dominated by the component every hidden
+state shares; `recipe="raw_mean"` keeps that older vector for reproducing earlier
+results and warns. `prepare_quran_persona` instead combines centered verse,
+paragraph and surah directions with default weights 0.50, 0.35 and 0.15, then
+normalizes the result. Use one preparation method for the experiment being measured.
 
 `ContrastiveQuranSteerer.prepare_contrastive_steering(positive_texts,
 negative_texts)` constructs normalized differences between activation means.
@@ -250,7 +253,7 @@ next to any output you report.
 | Remote code | Off by default for LLMs and embedders | Review code before opt-in; supply a full 40-character commit revision |
 | LLM revision | `QuranSteerer(llm_revision=...)` or `SteeredLLM(revision=...)` | Pin the checkpoint for reproducible runs |
 | Embedding revision | `QuranEmbeddings(revision=..., trust_remote_code=...)` | Configure separately; the high-level LLM revision does not pin the embedder |
-| Steering caches | Numeric NPZ arrays and JSON model/revision/corpus/recipe metadata | Recompute old/mismatched caches; do not convert them by loading pickle |
+| Steering caches | Numeric NPZ arrays and JSON model/revision/corpus/recipe metadata, format 3 | Older formats and mismatched caches are recomputed, with a log line naming the reason; do not convert them by loading pickle |
 | Corrupt artifacts | Invalid arrays/metadata are rejected; supported cache errors trigger recomputation | Other corruption can raise; investigate and rebuild from a trusted source |
 | Dynamic retrieval steering | Off by default | Explicitly pass both opt-in flags for trusted-corpus experiments |
 | Temporary hooks | Restored after high-level generation, including failure | Use scalar diagnostics instead of relying on retained activation tensors |
@@ -291,6 +294,7 @@ configures the graph provider and enables graph index building with
 | `--injection-mode` | `add`, `blend`, `replace`, `clamp` |
 | `--layer-distribution` | `uniform`, `bell`, `focused`, `workspace` |
 | `--chunk-by`, `--quran-persona`, `--theme` | Select text resolution (default from preset), weighted persona, or thematic preparation |
+| `--recipe` | `centered` (default) or `raw_mean` for mean and persona vectors |
 | `--quran-path`, `--cache-dir` | Corpus and steering-cache paths |
 | `--device`, `--quantize` | Device (`cpu`, `cuda`, `mps`) and optional `4bit`/`8bit` loading |
 | `--max-tokens`, `--temperature` | Generation options, forwarded on every CLI path |

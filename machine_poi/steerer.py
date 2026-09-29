@@ -10,6 +10,7 @@ import logging
 import hashlib
 import math
 import threading
+import warnings
 from functools import wraps
 import torch
 import numpy as np
@@ -25,7 +26,7 @@ from .controls import (
 )
 from .quran_embeddings import QuranEmbeddings, QuranFileError, resolve_corpus_path
 from .llm_wrapper import SteeredLLM
-from .steering_cache import load_vectors, save_vectors
+from .steering_cache import CacheMismatchError, load_vectors, save_vectors
 from .retrieval_context import quote_retrieval
 from .knowledge_base import QuranKnowledgeBase
 from .hybrid_knowledge_base import HybridQuranKnowledgeBase
@@ -714,20 +715,64 @@ class QuranSteerer:
         """Normalize a pooled direction and place it on the steering device."""
         return torch.nn.functional.normalize(vector, dim=-1).to(self.device)
 
-    def _cache_metadata(self, recipe, **parameters):
+    def _recipe_parameters(self, recipe: str) -> Dict[str, str]:
+        """Validate a vector recipe; centered recipes name their control set."""
+        if recipe == "centered":
+            return {"neutral_sha256": texts_sha256(neutral_control_texts("ar"))}
+        if recipe == "raw_mean":
+            warnings.warn(
+                "recipe='raw_mean' keeps the component every hidden state shares, so "
+                "the direction is mostly generic model state rather than Quran "
+                "content; use recipe='centered' unless reproducing older results",
+                UserWarning,
+                stacklevel=3,
+            )
+            return {}
+        raise InvalidConfigError(f"Unknown recipe {recipe!r}; use 'centered' or 'raw_mean'")
+
+    def _neutral_control_means(self) -> Dict[int, torch.Tensor]:
+        """Mean pooled activation of the neutral Arabic control set per layer."""
+        texts = neutral_control_texts("ar")
+        logger.info(f"Computing the neutral control mean from {len(texts)} Arabic sentences...")
+        pooled = self._pooled_activations(texts)
+        return {layer_idx: stacked.mean(dim=0) for layer_idx, stacked in pooled.items()}
+
+    def _direction(self, mean, control, layer_idx):
+        """Unit steering direction: the mean, minus the control mean if centering."""
+        if control is not None:
+            mean = mean - control[layer_idx]
+        return self._unit(mean)
+
+    def _use_cached_vectors(self, cache_path, metadata) -> bool:
+        """Apply matching cached vectors; log why a cache is not used."""
+        try:
+            vectors = load_vectors(cache_path, metadata)
+            self.steering_vectors = {k: torch.tensor(v, device=self.device)
+                                     for k, v in vectors.items()}
+            self._apply_steering()
+            return True
+        except CacheMismatchError as exc:
+            logger.warning("Recomputing steering vectors: %s", exc)
+        except (ValueError, KeyError, OSError, EOFError) as exc:
+            logger.warning("Cache rejected; recomputing: %s", type(exc).__name__)
+        return False
+
+    def _cache_metadata(self, method, **parameters):
         revision = self.llm_revision
         model = getattr(self.llm, "model", None)
         actual_revision = getattr(getattr(model, "config", None), "_commit_hash", None)
         if isinstance(actual_revision, str):
             revision = actual_revision
         # Format 2: verse sampling keeps every verse (format 1 dropped short ones).
-        return {"format": 2, "model": self.llm_model_name,
+        # Format 3: mean and persona vectors are centered on a neutral control by
+        # default, and the vector recipe is recorded.
+        return {"format": 3, "model": self.llm_model_name,
                 "revision": revision or "unresolved",
                 "corpus_sha256": hashlib.sha256(self.quran_path.read_bytes()).hexdigest(),
                 "hidden_size": self.llm.hidden_size, "num_layers": self.llm.num_layers,
                 "pooling": ("content_tokens" if STEERING_DEFAULTS.pool_exclude_special_tokens
                             else "all_tokens"),
-                "recipe": recipe, "parameters": parameters}
+                "method": method, "parameters": parameters}
 
     def _save_vectors(self, path, metadata):
         save_vectors(path, {k: v.detach().float().cpu().numpy()
@@ -748,16 +793,24 @@ class QuranSteerer:
         cache_path: Optional[Union[str, Path]] = None,
         use_cached: bool = True,
         sample_size: Optional[int] = None,
+        recipe: Literal["centered", "raw_mean"] = "centered",
     ) -> Dict[int, torch.Tensor]:
         """
-        Prepare steering vectors from Quran text using Mean Activation steering.
-        
+        Prepare steering vectors from Quran text using mean activations.
+
+        The default ``centered`` recipe is contrastive activation addition:
+        ``mean(Quran) - mean(neutral Arabic control)`` at each layer, so the
+        direction keeps what distinguishes the verses rather than the large
+        component every hidden state shares. ``raw_mean`` keeps the older,
+        uncentered mean and warns.
+
         Args:
             chunk_by: How to chunk the Quran text
             cache_path: Path to cache the computed vectors
             use_cached: Whether to use cached vectors if available
             sample_size: Number of samples to use (default from config)
-            
+            recipe: "centered" (default) or "raw_mean"
+
         Returns:
             Dictionary mapping layer indices to steering vectors
         """
@@ -769,17 +822,13 @@ class QuranSteerer:
 
         if type(sample_size) is not int or sample_size < 1:
             raise InvalidConfigError("Sample size must be a positive integer")
-        metadata = self._cache_metadata("mean", chunk_by=chunk_by, sample_size=sample_size,
+        centering = self._recipe_parameters(recipe)
+        metadata = self._cache_metadata("mean", recipe=recipe, **centering, chunk_by=chunk_by,
+                                        sample_size=sample_size,
                                         seed=STEERING_DEFAULTS.random_seed)
         if cache_path and use_cached and Path(cache_path).exists():
-            try:
-                vectors = load_vectors(cache_path, metadata)
-                self.steering_vectors = {k: torch.tensor(v, device=self.device)
-                                         for k, v in vectors.items()}
-                self._apply_steering()
+            if self._use_cached_vectors(cache_path, metadata):
                 return self.steering_vectors
-            except (ValueError, KeyError, OSError, EOFError) as exc:
-                logger.warning("Cache rejected; recomputing: %s", type(exc).__name__)
 
         # Load text
         texts = self.embedder.load_quran_text(self.quran_path, chunk_by=chunk_by)
@@ -794,8 +843,10 @@ class QuranSteerer:
 
         logger.info("Computing mean activations from Quran text...")
         pooled = self._pooled_activations(list(selected_texts))
+        control = self._neutral_control_means() if centering else None
         self.steering_vectors = {
-            layer_idx: self._unit(stacked.mean(dim=0)) for layer_idx, stacked in pooled.items()
+            layer_idx: self._direction(stacked.mean(dim=0), control, layer_idx)
+            for layer_idx, stacked in pooled.items()
         }
 
         if cache_path:
@@ -899,20 +950,24 @@ class QuranSteerer:
         verse_weight: float = 0.5,
         paragraph_weight: float = 0.35,
         surah_weight: float = 0.15,
+        recipe: Literal["centered", "raw_mean"] = "centered",
     ) -> Dict[int, torch.Tensor]:
         """
         Create a "Quran Persona" by aggregating activations from all resolution levels.
         
-        This computes mean activations from verse, paragraph, and surah levels,
+        This computes a direction from verse, paragraph, and surah levels,
         then combines them with configurable weights to create a comprehensive
-        steering profile.
-        
+        steering profile. With the default ``centered`` recipe each level's
+        direction is its mean minus the neutral Arabic control mean, as in
+        :meth:`prepare_quran_steering`.
+
         Args:
             cache_dir: Directory to cache computed vectors
             verse_weight: Weight for verse-level activations
             paragraph_weight: Weight for paragraph-level activations
             surah_weight: Weight for surah-level activations
-            
+            recipe: "centered" (default) or "raw_mean"
+
         Returns:
             Dictionary mapping layer indices to combined steering vectors
         """
@@ -924,18 +979,13 @@ class QuranSteerer:
         weights = (verse_weight, paragraph_weight, surah_weight)
         if any(not math.isfinite(w) or w < 0 for w in weights) or sum(weights) <= 0:
             raise InvalidConfigError("Persona weights must be finite, nonnegative and sum above zero")
-        metadata = self._cache_metadata("persona", weights=list(weights),
+        centering = self._recipe_parameters(recipe)
+        metadata = self._cache_metadata("persona", recipe=recipe, **centering,
+                                        weights=list(weights),
                                         sample_size=STEERING_DEFAULTS.persona_sample_size,
                                         seed=STEERING_DEFAULTS.random_seed)
-        if cache_path.exists():
-            try:
-                vectors = load_vectors(cache_path, metadata)
-                self.steering_vectors = {k: torch.tensor(v, device=self.device)
-                                         for k, v in vectors.items()}
-                self._apply_steering()
-                return self.steering_vectors
-            except (ValueError, KeyError, OSError, EOFError) as exc:
-                logger.warning("Persona cache rejected; recomputing: %s", type(exc).__name__)
+        if cache_path.exists() and self._use_cached_vectors(cache_path, metadata):
+            return self.steering_vectors
 
         # Normalize weights
         total_weight = verse_weight + paragraph_weight + surah_weight
@@ -947,6 +997,7 @@ class QuranSteerer:
         
         # Collect activations from each resolution level
         resolution_activations: Dict[str, Dict[int, torch.Tensor]] = {}
+        control = self._neutral_control_means() if centering else None
         
         for resolution, weight, sample_size in [
             ("verse", verse_weight, STEERING_DEFAULTS.persona_sample_size),
@@ -964,7 +1015,8 @@ class QuranSteerer:
             
             pooled = self._pooled_activations(texts)
             resolution_activations[resolution] = {
-                layer_idx: self._unit(stacked.mean(dim=0)) for layer_idx, stacked in pooled.items()
+                layer_idx: self._direction(stacked.mean(dim=0), control, layer_idx)
+                for layer_idx, stacked in pooled.items()
             }
             
             # Cleanup between resolutions

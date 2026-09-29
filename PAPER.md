@@ -40,8 +40,10 @@ or a proven hierarchy of semantic concepts.
 
 Activation Addition modifies intermediate model activations using directions
 constructed from contrasting prompts [1]. Machine-POI uses forward hooks and
-several vector recipes; its uncentered corpus-mean path is not the same protocol
-as the original contrasting-prompt experiments.
+several vector recipes. Its default corpus-mean path is centered on a neutral
+control set, a contrast in the spirit of CAA [2]; the older uncentered mean
+(`recipe="raw_mean"`) is not the same protocol as the original
+contrasting-prompt experiments.
 
 ### 2.2 Contrastive activation addition
 
@@ -70,15 +72,21 @@ then averages across sampled texts:
 
 $$
 \mu_l = \frac{1}{N}\sum_{i=1}^{N}\frac{1}{|T_i|}
-\sum_{t=1}^{|T_i|} h_l(T_i,t), \qquad v_l = \operatorname{normalize}(\mu_l).
+\sum_{t=1}^{|T_i|} h_l(T_i,t), \qquad v_l = \operatorname{normalize}(\mu_l - \nu_l),
 $$
+
+where `ν_l` is the same pooled mean over the 120 neutral Arabic control sentences.
+Without centering, `μ_l` is dominated by the component that every hidden state
+shares, so its direction says little about the corpus; `recipe="raw_mean"` keeps
+`v_l = normalize(μ_l)` for reproducing older results and warns.
 
 Each text receives equal weight after token pooling. The token sum runs over
 content tokens: BOS and other special tokens are excluded by default, since the
 first position carries a large generic activation shared by every text. The high-level persona path
-computes separate normalized means for verses, paragraph chunks of up to 19 verses
+computes a separate centered direction for verses, paragraph chunks of up to 19 verses
 within a surah, and surahs, combines them with default weights 0.50/0.35/0.15, and normalizes the
-combined vector. The contrastive path normalizes `mean(positive) - mean(negative)`.
+combined vector. Paragraphs and surahs are much longer than the control sentences,
+so their contrast also carries length. The contrastive path normalizes `mean(positive) - mean(negative)`.
 Zero norms are handled by the underlying normalization routines; a zero vector
 has no semantic direction.
 

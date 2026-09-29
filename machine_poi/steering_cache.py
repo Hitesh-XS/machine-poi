@@ -13,6 +13,23 @@ from pathlib import Path
 import numpy as np
 
 
+class CacheMismatchError(ValueError):
+    """A readable cache written for another model, corpus, recipe or format."""
+
+
+def _mismatch(stored, expected):
+    """Describe a mismatch using only the expected metadata's own keys."""
+    if not isinstance(stored, dict) or stored.get("format") != expected.get("format"):
+        return CacheMismatchError(
+            f"cache predates format {expected.get('format')}, which changed how vectors "
+            "are computed"
+        )
+    keys = sorted(key for key in expected if stored.get(key) != expected[key])
+    return CacheMismatchError(
+        f"cache was built with different {', '.join(keys) or 'metadata fields'}"
+    )
+
+
 def _validated(vectors, hidden_size, num_layers):
     if not vectors:
         raise ValueError("Empty steering cache")
@@ -37,8 +54,9 @@ def load_vectors(path, metadata):
         if sum(item.file_size for item in archive.infolist()) > 128 * 1024 * 1024:
             raise ValueError("Expanded cache exceeds size limit")
     with np.load(path, allow_pickle=False) as data:
-        if json.loads(str(data["metadata"].item())) != metadata:
-            raise ValueError("Cache model, revision, corpus or recipe mismatch")
+        stored = json.loads(str(data["metadata"].item()))
+        if stored != metadata:
+            raise _mismatch(stored, metadata)
         vectors = {}
         for key in data.files:
             if key == "metadata":

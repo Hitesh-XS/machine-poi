@@ -92,6 +92,7 @@ def test_main_applies_zero_coefficient_before_preparing_vectors(monkeypatch):
     assert steerer.config.coefficient == 0.0
     steerer.prepare_quran_steering.assert_called_once()
     assert steerer.prepare_quran_steering.call_args.kwargs["chunk_by"] == "verse"
+    assert steerer.prepare_quran_steering.call_args.kwargs["recipe"] == "centered"
     steerer.compare.assert_called_once()
 
 

@@ -121,6 +121,13 @@ Examples:
         choices=["verse", "paragraph", "surah"],
         help="How to chunk Quran text (default: from preset)",
     )
+    parser.add_argument(
+        "--recipe",
+        default="centered",
+        choices=["centered", "raw_mean"],
+        help="Vector recipe: Quran mean minus a neutral Arabic control mean "
+             "(default), or the older uncentered mean",
+    )
 
     # Paths
     parser.add_argument(
@@ -553,16 +560,17 @@ def run(args):
 
     # Prepare steering
     print("Preparing Quran-based steering vectors...")
-    cache_path = Path(args.cache_dir) / f"quran_{args.embedding}_{chunk_by}.npz"
+    cache_path = Path(args.cache_dir) / f"quran_{args.embedding}_{chunk_by}_{args.recipe}.npz"
 
     if args.theme:
         steerer.prepare_thematic_steering(args.theme)
     elif args.quran_persona:
-        steerer.prepare_quran_persona(cache_dir=args.cache_dir)
+        steerer.prepare_quran_persona(cache_dir=args.cache_dir, recipe=args.recipe)
     else:
         steerer.prepare_quran_steering(
             chunk_by=chunk_by,
             cache_path=cache_path,
+            recipe=args.recipe,
         )
 
     print("Ready!\n")
