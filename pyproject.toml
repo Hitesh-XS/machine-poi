@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,8 @@ name = "machine-poi"
 dynamic = ["version"]
 description = "Host-side gateway for agent tool actions, plus Quran-derived activation steering research"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.10"
 # The guardian (machine_poi.guardian) uses only the standard library.
 dependencies = []

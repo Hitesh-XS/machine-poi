@@ -174,8 +174,13 @@ need no code.
 These are methodological references; their findings do not validate Machine-POI's
 particular vectors, checkpoints, or containment implementation.
 
-## License status
+## License
 
-This checkout does not contain a license file. The earlier README's MIT label was
-not accompanied by license terms; a repository license still needs to be supplied
-by the owner. Model and dataset terms must be checked separately.
+Machine-POI is licensed under the [Apache License 2.0](LICENSE); see
+[NOTICE](NOTICE). Contributions are accepted under the same license (section 5).
+
+The license does not cover third-party material:
+
+- `al-quran.txt` is third-party text. Its source, edition and terms are not yet
+  recorded; see decision 1 in the [improvement plan](docs/improvement_plan.md#decisions-needed-from-the-owner).
+- Models, datasets and benchmarks that the code downloads keep their own terms.
