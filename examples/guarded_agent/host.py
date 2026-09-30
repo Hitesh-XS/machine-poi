@@ -14,7 +14,9 @@ from machine_poi.guardian import (
 )
 
 
-def build_host(*, audit=None, clock=time.time):
+def build_host(*, audit=None, clock=time.time, slow_job=None):
+    """A gateway with mock tools. ``slow_job`` (an asyncio.Event) adds a
+    ``long_job`` tool that waits for the event before its side effect."""
     effects = []
 
     def describe_write(arguments):
@@ -43,28 +45,35 @@ def build_host(*, audit=None, clock=time.time):
         effects.append({"tool": "send_note", **arguments})
         return {"receipt": len(effects)}
 
-    gateway = Gateway(
-        [
-            ToolSpec(
-                "write_note", "1", {"document": str, "text": str}, describe_write, write
-            ),
-            ToolSpec(
-                "send_note",
-                "1",
-                {"document": str, "recipient": str},
-                describe_send,
-                send,
-            ),
-        ],
-        operators={"operator"},
-        audit=audit,
-        clock=clock,
-    )
+    tools = [
+        ToolSpec(
+            "write_note", "1", {"document": str, "text": str}, describe_write, write
+        ),
+        ToolSpec(
+            "send_note",
+            "1",
+            {"document": str, "recipient": str},
+            describe_send,
+            send,
+        ),
+    ]
+    if slow_job is not None:
+
+        async def long_job(arguments, context):
+            await slow_job.wait()
+            context.checkpoint()
+            effects.append({"tool": "long_job", **arguments})
+            return {"receipt": len(effects)}
+
+        tools.append(
+            ToolSpec("long_job", "1", {"document": str}, describe_write, long_job)
+        )
+    gateway = Gateway(tools, operators={"operator"}, audit=audit, clock=clock)
     grant = TaskGrant(
         "demo",
         "agent",
         clock() + 600,
-        frozenset({"write_note", "send_note"}),
+        frozenset(tool.name for tool in tools),
         frozenset({"draft:1"}),
         frozenset({"reviewer:internal"}),
         frozenset({"internal"}),

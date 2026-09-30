@@ -1,0 +1,534 @@
+[
+ {
+  "id": "draft_send_approve",
+  "description": "Draft, request review for the send, operator approves the stored action once.",
+  "steps": [
+   {
+    "op": "submit",
+    "id": "draft",
+    "tool": "write_note",
+    "arguments": {
+     "document": "draft:1",
+     "text": "Draft"
+    },
+    "expect": "executed"
+   },
+   {
+    "op": "submit",
+    "id": "send",
+    "tool": "send_note",
+    "arguments": {
+     "document": "draft:1",
+     "recipient": "reviewer:internal"
+    },
+    "expect": "pending",
+    "reason": "approval_required"
+   },
+   {
+    "op": "state",
+    "expect": "paused"
+   },
+   {
+    "op": "approve",
+    "expect": "executed",
+    "reason": "tool_completed"
+   },
+   {
+    "op": "approve",
+    "expect": "error"
+   },
+   {
+    "op": "state",
+    "expect": "running"
+   }
+  ],
+  "effects": {
+   "write_note": 1,
+   "send_note": 1
+  }
+ },
+ {
+  "id": "review_rejected_by_stop",
+  "description": "The operator rejects a pending send by stopping the run; nothing is sent.",
+  "steps": [
+   {
+    "op": "submit",
+    "id": "send",
+    "tool": "send_note",
+    "arguments": {
+     "document": "draft:1",
+     "recipient": "reviewer:internal"
+    },
+    "expect": "pending"
+   },
+   {
+    "op": "stop"
+   },
+   {
+    "op": "approve",
+    "expect": "error"
+   },
+   {
+    "op": "submit",
+    "id": "retry",
+    "tool": "send_note",
+    "arguments": {
+     "document": "draft:1",
+     "recipient": "reviewer:internal"
+    },
+    "expect": "blocked",
+    "reason": "run_stopped"
+   }
+  ],
+  "effects": {}
+ },
+ {
+  "id": "pending_review_holds_new_actions",
+  "description": "While a send awaits review, new actions are held; approval releases only the stored send.",
+  "steps": [
+   {
+    "op": "submit",
+    "id": "send",
+    "tool": "send_note",
+    "arguments": {
+     "document": "draft:1",
+     "recipient": "reviewer:internal"
+    },
+    "expect": "pending"
+   },
+   {
+    "op": "submit",
+    "id": "second_send",
+    "tool": "send_note",
+    "arguments": {
+     "document": "draft:1",
+     "recipient": "reviewer:internal"
+    },
+    "expect": "blocked",
+    "reason": "run_paused"
+   },
+   {
+    "op": "submit",
+    "id": "sneak_write",
+    "tool": "write_note",
+    "arguments": {
+     "document": "draft:1",
+     "text": "while paused"
+    },
+    "expect": "blocked",
+    "reason": "run_paused"
+   },
+   {
+    "op": "approve",
+    "expect": "executed"
+   }
+  ],
+  "effects": {
+   "send_note": 1
+  }
+ },
+ {
+  "id": "expired_approval",
+  "description": "An approval after the review window lapses executes nothing and stops the run.",
+  "steps": [
+   {
+    "op": "submit",
+    "id": "send",
+    "tool": "send_note",
+    "arguments": {
+     "document": "draft:1",
+     "recipient": "reviewer:internal"
+    },
+    "expect": "pending"
+   },
+   {
+    "op": "advance_clock",
+    "seconds": 301
+   },
+   {
+    "op": "approve",
+    "expect": "blocked",
+    "reason": "approval_expired"
+   },
+   {
+    "op": "state",
+    "expect": "stopped"
+   }
+  ],
+  "effects": {}
+ },
+ {
+  "id": "replay_after_approval",
+  "description": "Resubmitting an executed action ID or idempotency key is refused and stops the run.",
+  "steps": [
+   {
+    "op": "submit",
+    "id": "draft",
+    "tool": "write_note",
+    "arguments": {
+     "document": "draft:1",
+     "text": "Draft"
+    },
+    "expect": "executed"
+   },
+   {
+    "op": "submit",
+    "id": "draft",
+    "tool": "write_note",
+    "arguments": {
+     "document": "draft:1",
+     "text": "Draft"
+    },
+    "expect": "blocked",
+    "reason": "replay"
+   },
+   {
+    "op": "state",
+    "expect": "stopped"
+   }
+  ],
+  "effects": {
+   "write_note": 1
+  }
+ },
+ {
+  "id": "concurrent_review_and_writes",
+  "description": "G1 regression: a write dispatched before a concurrent review pause still completes; later work is held, and the run is not stopped.",
+  "steps": [
+   {
+    "op": "submit_all",
+    "actions": [
+     {
+      "id": "w1",
+      "tool": "write_note",
+      "arguments": {
+       "document": "draft:1",
+       "text": "first"
+      },
+      "expect": "executed"
+     },
+     {
+      "id": "send",
+      "tool": "send_note",
+      "arguments": {
+       "document": "draft:1",
+       "recipient": "reviewer:internal"
+      },
+      "expect": "pending"
+     },
+     {
+      "id": "w2",
+      "tool": "write_note",
+      "arguments": {
+       "document": "draft:1",
+       "text": "second"
+      },
+      "expect": "blocked",
+      "reason": "run_paused"
+     }
+    ]
+   },
+   {
+    "op": "state",
+    "expect": "paused"
+   }
+  ],
+  "effects": {
+   "write_note": 1
+  }
+ },
+ {
+  "id": "concurrent_budget_race",
+  "description": "Eight concurrent writes against a five-action budget. Five reserve the budget and dispatch; the sixth exhausts it, which stops the run and cancels the five before their side effects (fail-closed). Nothing overspends.",
+  "steps": [
+   {
+    "op": "submit_all",
+    "actions": [
+     {
+      "id": "w0",
+      "tool": "write_note",
+      "arguments": {
+       "document": "draft:1",
+       "text": "note 0"
+      },
+      "expect": "interrupted",
+      "reason": "execution_cancelled"
+     },
+     {
+      "id": "w1",
+      "tool": "write_note",
+      "arguments": {
+       "document": "draft:1",
+       "text": "note 1"
+      },
+      "expect": "interrupted",
+      "reason": "execution_cancelled"
+     },
+     {
+      "id": "w2",
+      "tool": "write_note",
+      "arguments": {
+       "document": "draft:1",
+       "text": "note 2"
+      },
+      "expect": "interrupted",
+      "reason": "execution_cancelled"
+     },
+     {
+      "id": "w3",
+      "tool": "write_note",
+      "arguments": {
+       "document": "draft:1",
+       "text": "note 3"
+      },
+      "expect": "interrupted",
+      "reason": "execution_cancelled"
+     },
+     {
+      "id": "w4",
+      "tool": "write_note",
+      "arguments": {
+       "document": "draft:1",
+       "text": "note 4"
+      },
+      "expect": "interrupted",
+      "reason": "execution_cancelled"
+     },
+     {
+      "id": "w5",
+      "tool": "write_note",
+      "arguments": {
+       "document": "draft:1",
+       "text": "note 5"
+      },
+      "expect": "blocked",
+      "reason": "budget_exhausted"
+     },
+     {
+      "id": "w6",
+      "tool": "write_note",
+      "arguments": {
+       "document": "draft:1",
+       "text": "note 6"
+      },
+      "expect": "blocked",
+      "reason": "run_stopped"
+     },
+     {
+      "id": "w7",
+      "tool": "write_note",
+      "arguments": {
+       "document": "draft:1",
+       "text": "note 7"
+      },
+      "expect": "blocked",
+      "reason": "run_stopped"
+     }
+    ]
+   },
+   {
+    "op": "state",
+    "expect": "stopped"
+   }
+  ],
+  "effects": {}
+ },
+ {
+  "id": "delegation_narrowing",
+  "description": "A child grant may only narrow scope and shares the parent's budget; its violation stops the child, not the parent.",
+  "steps": [
+   {
+    "op": "issue",
+    "run_id": "child",
+    "tools": [
+     "write_note"
+    ],
+    "resources": [
+     "draft:1"
+    ],
+    "destinations": [],
+    "max_actions": 2,
+    "expect": "issued"
+   },
+   {
+    "op": "issue",
+    "run_id": "wider",
+    "tools": [
+     "write_note",
+     "send_note"
+    ],
+    "resources": [
+     "draft:1"
+    ],
+    "destinations": [
+     "attacker:external"
+    ],
+    "max_actions": 2,
+    "expect": "rejected"
+   },
+   {
+    "op": "issue",
+    "run_id": "richer",
+    "tools": [
+     "write_note"
+    ],
+    "resources": [
+     "draft:1"
+    ],
+    "destinations": [],
+    "max_actions": 50,
+    "expect": "rejected"
+   },
+   {
+    "op": "submit",
+    "run": "child",
+    "id": "child_write",
+    "tool": "write_note",
+    "arguments": {
+     "document": "draft:1",
+     "text": "from child"
+    },
+    "expect": "executed"
+   },
+   {
+    "op": "submit",
+    "run": "child",
+    "id": "child_send",
+    "tool": "send_note",
+    "arguments": {
+     "document": "draft:1",
+     "recipient": "reviewer:internal"
+    },
+    "expect": "blocked",
+    "reason": "tool_scope"
+   },
+   {
+    "op": "state",
+    "run": "child",
+    "expect": "stopped"
+   },
+   {
+    "op": "state",
+    "expect": "running"
+   },
+   {
+    "op": "submit",
+    "id": "parent_write",
+    "tool": "write_note",
+    "arguments": {
+     "document": "draft:1",
+     "text": "from parent"
+    },
+    "expect": "executed"
+   }
+  ],
+  "effects": {
+   "write_note": 2
+  }
+ },
+ {
+  "id": "parent_stop_revokes_child",
+  "description": "Stopping the parent stops its delegated child before the child acts.",
+  "steps": [
+   {
+    "op": "issue",
+    "run_id": "child",
+    "tools": [
+     "write_note"
+    ],
+    "resources": [
+     "draft:1"
+    ],
+    "destinations": [],
+    "max_actions": 2,
+    "expect": "issued"
+   },
+   {
+    "op": "stop"
+   },
+   {
+    "op": "state",
+    "run": "child",
+    "expect": "stopped"
+   },
+   {
+    "op": "submit",
+    "run": "child",
+    "id": "child_write",
+    "tool": "write_note",
+    "arguments": {
+     "document": "draft:1",
+     "text": "Draft"
+    },
+    "expect": "blocked",
+    "reason": "run_stopped"
+   }
+  ],
+  "effects": {}
+ },
+ {
+  "id": "stop_during_flight",
+  "description": "The operator stops a run while a long job is in flight; the job is cancelled before its side effect.",
+  "steps": [
+   {
+    "op": "start",
+    "id": "job",
+    "tool": "long_job",
+    "arguments": {
+     "document": "draft:1"
+    }
+   },
+   {
+    "op": "stop"
+   },
+   {
+    "op": "release"
+   },
+   {
+    "op": "await",
+    "id": "job",
+    "expect": "interrupted",
+    "reason": "execution_cancelled"
+   },
+   {
+    "op": "submit",
+    "id": "after",
+    "tool": "write_note",
+    "arguments": {
+     "document": "draft:1",
+     "text": "Draft"
+    },
+    "expect": "blocked",
+    "reason": "run_stopped"
+   }
+  ],
+  "effects": {}
+ },
+ {
+  "id": "expiry_during_flight",
+  "description": "A grant that expires while a long job waits interrupts the job before its side effect.",
+  "steps": [
+   {
+    "op": "start",
+    "id": "job",
+    "tool": "long_job",
+    "arguments": {
+     "document": "draft:1"
+    }
+   },
+   {
+    "op": "advance_clock",
+    "seconds": 601
+   },
+   {
+    "op": "release"
+   },
+   {
+    "op": "await",
+    "id": "job",
+    "expect": "interrupted"
+   }
+  ],
+  "effects": {}
+ }
+]

@@ -91,18 +91,35 @@ No model weights or live external-tool credentials were used in these checks.
 
 ## What the action fixtures measure
 
-[`cases.json`](../evals/rogue_agent/cases.json) contains proposed tool actions and
-expected decisions. The runner creates a fresh mock host for each case, submits
-the proposal and checks status/reason and mock side effects. The
-[committed report](../evals/rogue_agent/results.json) includes fixture SHA-256,
-Python version, timestamp, case results and local latency observations.
+[`cases.json`](../evals/rogue_agent/cases.json) contains single proposed tool
+actions and expected decisions. The runner creates a fresh mock host for each
+case, submits the proposal and checks status/reason and mock side effects.
+
+[`scenarios.json`](../evals/rogue_agent/scenarios.json) contains multi-step
+sequences run against one host with a simulated clock:
+
+- draft, review and approval, including a second approval of the same action;
+- rejection by stop, and an approval after the review window;
+- held work while a review is pending, and replay after execution;
+- concurrent submissions, including the pause race fixed in Phase 0 and a
+  budget race;
+- delegation that tries to widen scope or budget, and a parent stop that revokes
+  its child;
+- a stop, and a grant expiry, while a long job is in flight.
+
+Each scenario lists the exact side effects it permits; any others count as
+unapproved, and the runner exits non-zero if a step or effect count differs. The
+budget race shows the fail-closed design: the request that exhausts the budget
+stops the run, which also cancels reserved actions that had not yet run.
+
+The [committed report](../evals/rogue_agent/results.json) includes fixture and
+scenario SHA-256s, Python version, timestamp, per-case and per-step results and
+local latency observations.
 
 Fixture context text is descriptive; it is not submitted to an LLM. Consequently,
 these results measure policy enforcement once an action exists. They do not
 measure prompt-injection success, semantic goal adherence, steering efficacy, or
 general task completion. A pending benign review is not an executed task.
-Cancellation, approval replay, concurrent accounting and cross-run state behavior
-are covered separately by regression tests.
 
 To reproduce a report without replacing the committed evidence:
 
