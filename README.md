@@ -128,8 +128,9 @@ which need no code:
 - adding QuranicMMLU, IslamicMMLU and PalmX to the evaluation harness;
 - running the gateway on AgentDojo and InjecAgent.
 
-To take one, open an [issue](https://github.com/gutama/machine-poi/issues) that
-names it.
+Each problem has a [help-wanted issue](https://github.com/gutama/machine-poi/labels/help%20wanted);
+comment on it to claim the work. The [good first issues](https://github.com/gutama/machine-poi/labels/good%20first%20issue)
+need no code.
 
 ## Documentation
 

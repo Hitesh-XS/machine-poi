@@ -216,44 +216,44 @@ tool-capable models, so it costs more than the primary direction.
 ## Open problems
 
 Each item says what is needed and where to start. Items marked **no code** need
-domain knowledge rather than programming.
+domain knowledge rather than programming. Each links to its issue.
 
 ### Steering and evaluation
 
-1. **Add Arabic and Islamic benchmarks to the harness.** Add QuranicMMLU,
+1. **Add Arabic and Islamic benchmarks to the harness** ([#25](https://github.com/gutama/machine-poi/issues/25)). Add QuranicMMLU,
    IslamicMMLU and PalmX as capability metrics next to ARC-Easy in
    [`experiments/steering_eval.py`](../experiments/steering_eval.py) (the
    `metrics.capability` block of a spec). Skills: Python, LLM evaluation.
-2. **Rate the blinded outputs (no code).** The committed
+2. **Rate the blinded outputs (no code)** ([#26](https://github.com/gutama/machine-poi/issues/26)). The committed
    [rating sheet](../experiments/results/qwen2.5-0.5b_phase4_rating_sheet.csv)
    needs two independent raters. The rubric is in
    [the evaluation guide](evaluation.md#human-ratings-of-thematic-relevance).
    Skills: reading English and Arabic answers, familiarity with Quranic themes.
-3. **Review the Arabic prompts and controls (no code).** The Modern Standard
+3. **Review the Arabic prompts and controls (no code)** ([#27](https://github.com/gutama/machine-poi/issues/27)). The Modern Standard
    Arabic prompts in [`eval_prompts.json`](../experiments/eval_prompts.json) and
    the neutral control sentences in
    [`neutral_arabic.txt`](../machine_poi/data/neutral_arabic.txt) await a
    native-speaker review. Skills: MSA.
-4. **Write an Arabic retrieval template.** The multi-resolution retrieval prompt
+4. **Write an Arabic retrieval template** ([#28](https://github.com/gutama/machine-poi/issues/28)). The multi-resolution retrieval prompt
    (`_mra_context` in [`steerer.py`](../machine_poi/steerer.py)) is English-only,
    so the model answers Arabic prompts in English when retrieval is on. Skills:
    Arabic, prompt design.
-5. **Sweep doses between 0.05 and 0.1, and add a 1B-class model.** The committed
+5. **Sweep doses between 0.05 and 0.1, and add a 1–2B model** ([#29](https://github.com/gutama/machine-poi/issues/29)). The committed
    run brackets the trade-off but does not locate it. Copy
    [the spec](../experiments/specs/qwen2.5-0.5b.json), tune on the `dev` split
    and report `test`. Skills: running experiments; CPU time is enough.
-6. **Compare against the strongest baselines.** Run AxBench-style prompting and
+6. **Compare against the strongest baselines** ([#30](https://github.com/gutama/machine-poi/issues/30)). Run AxBench-style prompting and
    SAE baselines against the centered recipe, and compare the dose calibration
    with Persona Dosing and the angle-norm account. Skills: interpretability.
 
 ### Agent containment
 
-7. **Run the gateway on AgentDojo and InjecAgent.** Route the benchmarks' tool
+7. **Run the gateway on AgentDojo and InjecAgent** ([#31](https://github.com/gutama/machine-poi/issues/31)). Route the benchmarks' tool
    calls through [`Gateway`](../machine_poi/guardian/gateway.py) and report
    attack success and benign utility. The committed
    [containment report](../evals/rogue_agent/results.json) covers
    already-proposed actions only. Skills: agent security, Python asyncio.
-8. **Feed representation signals into `observe()`.** Train a probe for injected
+8. **Feed representation signals into `observe()`** ([#32](https://github.com/gutama/machine-poi/issues/32)). Train a probe for injected
    authority (see [Same Bytes, Different Authority](https://arxiv.org/abs/2609.35932))
    and pass its calibrated output to the gateway as an `injection_indicator`.
    Then decide, with evidence, what the signal should trigger. Skills:
@@ -261,17 +261,17 @@ domain knowledge rather than programming.
 
 ### Writing
 
-9. **Cite and position the related work.** Add the gap papers above to
+9. **Cite and position the related work** ([#33](https://github.com/gutama/machine-poi/issues/33)). Add the gap papers above to
    [PAPER.md](../PAPER.md) and the docs, and position the gateway against
    Out-of-Band Policy Enforcement, Progent, CaMeL, Cordon and ContainmentBench.
    Skills: reading papers carefully.
 
 ## How to join
 
-1. **Open an issue** at
-   [github.com/gutama/machine-poi/issues](https://github.com/gutama/machine-poi/issues)
-   naming the problem you want to take (for example, "Open problem 2: ratings").
-   Say what you plan to do, so work is not duplicated.
+1. **Claim a problem on its issue.** Each open problem above has an issue
+   labelled [help wanted](https://github.com/gutama/machine-poi/labels/help%20wanted).
+   Comment there with what you plan to do, so work is not duplicated. For a new
+   idea, [open an issue](https://github.com/gutama/machine-poi/issues/new).
 2. **Set up a checkout.** The guardian needs only the standard library; steering
    work needs PyTorch and Transformers. [Testing](testing.md) lists the commands
    for each environment, and CI runs the same checks on every pull request.
