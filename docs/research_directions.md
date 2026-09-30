@@ -278,9 +278,10 @@ domain knowledge rather than programming. Each links to its issue.
 3. **Report results with the harness.** Claims about steering should cite a run
    of [`experiments/steering_eval.py`](evaluation.md), with its provenance block.
 
-The repository does not have a license yet; the owner is choosing one (see the
-[README](../README.md#license-status)). Until it does, please discuss larger
-contributions in an issue first.
+The code and documentation are licensed under the
+[Apache License 2.0](../LICENSE), and contributions are accepted under the same
+license. The Quran text and downloaded models and datasets keep their own terms;
+see the [README](../README.md#license).
 
 ## Data and reproduction
 

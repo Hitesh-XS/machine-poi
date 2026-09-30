@@ -4,8 +4,9 @@
 [Containment plan](rogue_agent_containment_plan.md) ·
 [Workspace roadmap](global_workspace_improvement_plan.md)
 
-Status: all phases (0–5) delivered by 2026-09-30. Owner decision 1 (license
-and corpus provenance) below remains open. Reviewed at commit
+Status: all phases (0–5) delivered by 2026-09-30. The repository license is
+decided (Apache 2.0); the corpus provenance half of owner decision 1 remains
+open. Reviewed at commit
 `8be027d`. Paths and line numbers in the findings refer to that commit; Phase 1
 moved `src/` to `machine_poi/`.
 
@@ -281,8 +282,10 @@ staged enforcement) stay in the [containment plan](rogue_agent_containment_plan.
 
 ## Decisions needed from the owner
 
-1. **License and corpus provenance (E6).** Choose a repository license, and record
-   the source, edition and terms of `al-quran.txt` (plus a checksum) in a NOTICE.
+1. **License and corpus provenance (E6).** License decided (2026-09-30): Apache
+   License 2.0, in `LICENSE` and `NOTICE`, declared in `pyproject.toml`. Still
+   open: record the source, edition and terms of `al-quran.txt` (plus a
+   checksum) in `NOTICE`; the Apache license does not cover it until then.
 2. **Neutral Arabic control corpus (M3).** Decided: original sentences written
    for the project (no third-party license); a native-speaker review is pending.
 3. **Package rename (E1).** Decided: `machine_poi`, clean break, no `src` alias.
