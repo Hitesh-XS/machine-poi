@@ -29,7 +29,12 @@ jobs:
       - run: python -m pip install -c ci-constraints.txt -e ".[test]"
       - run: python -m pytest tests/guardian --confcutdir=tests/guardian -q
       - run: python -m examples.guarded_agent.process_demo
-      - run: python -m evals.rogue_agent.run
+      - run: python -m evals.rogue_agent.run --output containment-eval-report.json
+      - if: matrix.python == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: containment-eval-report
+          path: containment-eval-report.json
   runtime:
     runs-on: ubuntu-latest
     env:

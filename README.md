@@ -95,15 +95,15 @@ steering defaults off and requires an explicit trusted-corpus opt-in.
 
 ## Evidence and current limits
 
-- **Runtime correctness:** the implementation validation passed 197 local tests
-  with four slow/integration tests excluded. CI passed the full offline runtime
-  job and guardian jobs on Python 3.10 and 3.12. See dated evidence and commands
-  in [testing](docs/testing.md).
-- **Action containment fixtures:** all 12 synthetic cases passed, including nine
-  forbidden actions, with zero unapproved mock side effects. Three benign cases
-  had zero false blocks and one review request. The
-  [report](evals/rogue_agent/results.json) evaluates already-proposed actions;
-  it does not measure a model's resistance to prompt injection.
+- **Runtime correctness:** CI runs lint, the guardian suite on Python 3.10 and 3.12
+  without ML packages, and the offline runtime suite on every pull request; see
+  [testing](docs/testing.md) for what each job covers.
+- **Action containment fixtures:** the committed
+  [report](evals/rogue_agent/results.json) covers single forbidden and benign
+  actions and multi-step scenarios (review and approval, concurrency, delegation,
+  stops in flight), all passing with zero unapproved mock side effects. A test
+  fails CI if the report is stale. It evaluates already-proposed actions; it does
+  not measure a model's resistance to prompt injection.
 - **Steering behavior:** the [evaluation harness run](experiments/results/README.md)
   on Qwen2.5-0.5B-Instruct (48 held-out English and Arabic prompts, 95% intervals)
   found a trade-off: centered steering at ratio 0.05 left ARC-Easy accuracy

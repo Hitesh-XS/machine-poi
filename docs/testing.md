@@ -69,25 +69,23 @@ default, so `make test-all` still inherits that exclusion. Explicitly clear the
 marker filter with `python -m pytest -m ''` only in an environment prepared for
 slow/model integration work. Those tests were not part of the validation below.
 
-## Recorded validation
+## What CI checks
 
-At implementation commit `57d36c0b44dc31e65e3708587725f874f720522e`,
-validated on 2026-09-29:
+The [workflow](../.github/workflows/containment.yml) runs on every pull request
+and every push to `main`. The Actions page for a commit is the record of what
+passed; this guide does not repeat test counts, which change with every change.
 
-| Check | Result | Scope |
-| --- | --- | --- |
-| Local full selected suite, Python 3.12.14 | 197 passed; 4 deselected | Mocked runtime/retrieval plus guardian tests |
-| Guardian subset | 29 passed | Identity/scope, approval changes, replay, budgets, delegation, stop, expiry, policy/audit/callback failure |
-| Runtime safety subset | 17 passed | Hook cleanup/restoration, concurrent sessions, real mode deltas, clamp dose, cache and model-loading controls |
-| Mock demos | Both passed | Authorized effects, pending approval and forbidden destination |
-| Synthetic action fixtures | 12/12 passed | 9 forbidden actions blocked, 0 unapproved mock side effects |
-| Benign fixtures | 3 cases; 0 false blocks; 1 review | One case intentionally pauses for approval |
-| GitHub Actions | All 3 jobs passed | Guardian on Python 3.10/3.12 and full offline runtime on 3.12 |
+| Job | Checks |
+| --- | --- |
+| `lint` | `ruff check .` with the pinned version |
+| `guardian` (Python 3.10 and 3.12, no ML packages) | Guardian tests: identity and scope, approvals, replay, budgets, delegation, stop, expiry, retirement, audit bounds, nested validation, and policy, audit and callback failure. Also the mock process demo and the action fixtures and scenarios. The 3.12 run uploads the fixture report as the `containment-eval-report` artifact. |
+| `runtime` (Python 3.12, CPU torch) | The offline suite: steering, pooling, dose calibration, recipes, retrieval, the evaluation harness on a tiny model, CLI and runtime safety |
 
-The local full suite emitted one existing `asyncio.get_event_loop()` deprecation
-warning. The [CI run](https://github.com/gutama/machine-poi/actions/runs/36528823005)
-and [workflow](../.github/workflows/containment.yml) provide the validation context.
-No model weights or live external-tool credentials were used in these checks.
+`tests/guardian/test_eval_report.py` regenerates the fixture report and fails if
+the committed [`results.json`](../evals/rogue_agent/results.json) is stale, so the
+committed report always matches the current fixtures and gateway. Regenerate it
+with `python -m evals.rogue_agent.run --output evals/rogue_agent/results.json`.
+No model weights or live external-tool credentials are used in CI.
 
 ## What the action fixtures measure
 

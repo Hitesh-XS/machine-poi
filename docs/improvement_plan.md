@@ -4,7 +4,8 @@
 [Containment plan](rogue_agent_containment_plan.md) ·
 [Workspace roadmap](global_workspace_improvement_plan.md)
 
-Status: Phases 0–4 delivered 2026-09-29; Phase 5 proposed. Reviewed at commit
+Status: all phases (0–5) delivered by 2026-09-30. Owner decisions 1 (license
+and corpus provenance) and 6 (budget exhaustion) below remain open. Reviewed at commit
 `8be027d`. Paths and line numbers in the findings refer to that commit; Phase 1
 moved `src/` to `machine_poi/`.
 
@@ -243,7 +244,30 @@ Acceptance: one committed run on a small ungated model, with a README table that
 has confidence intervals. `reproduce_paper.py` §5.2 is retired or relabeled.
 PAPER.md claims are updated to cite only this harness.
 
-### Phase 5: guardian hardening and cleanup
+### Phase 5: guardian hardening and cleanup (delivered)
+
+Delivered as one commit per item with tests. Notes beyond the table:
+- **G2 (retirement and bounds):**
+  - `retire` requires child runs to be retired first, and stops an expired run
+    before removing it so its credentials are revoked.
+  - Tombstones are 16-byte digests. They still grow by one per retired run.
+  - Unknown-caller requests are audited at the 1st, 2nd, 4th… request with a
+    count. The caller's claimed run and action IDs are not logged, so 10,000
+    previews add 14 records.
+  - `AuditLog` takes a path or a callable sink with `tail=N`.
+- **G3 (nested validation):** the JSON-Schema subset is deliberately stricter
+  than JSON Schema. Objects are closed by default, booleans are not numbers, and
+  unknown keywords fail at registration.
+- **G4 (scenario fixtures):** 11 scenarios (46 steps). Reintroducing the G1 bug
+  fails the concurrency scenario. The budget race shows that the request which
+  exhausts a budget stops the run and cancels reserved actions that had not yet
+  run; see decision 6.
+- **E7 (evidence in docs):** exact test counts were removed from the README,
+  PAPER, testing guide and containment plan. CI uploads the fixture report as an
+  artifact, and `tests/guardian/test_eval_report.py` fails if the committed
+  report is stale. The stale deprecation-warning caveat was removed.
+
+The plan as written:
 
 | Item | Change | Acceptance |
 | --- | --- | --- |
@@ -267,6 +291,11 @@ staged enforcement) stay in the [containment plan](rogue_agent_containment_plan.
    until the review resolves and refunds the reservation, which adds latency and
    code. Revisit if a host needs pause to freeze in-flight work.
 5. **Projection-based vectors (M6).** Decided: deleted.
+6. **Budget exhaustion (G4).** Currently a request that would exceed a budget
+   stops the run, which also cancels reserved actions that have not started. The
+   alternative denies only that request and lets reserved actions finish. It is
+   less disruptive under concurrent load, and still fail-closed for the budget
+   itself.
 
 ## Not recommended
 
