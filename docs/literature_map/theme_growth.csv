@@ -1,0 +1,13 @@
+themes,2023,2024,2025,2026,2026_annualized,growth_2026a_vs_2024
+attention_geometry,121,142,173,199,265.3,1.87
+cultural_religious_alignment,59,154,361,282,376.0,2.44
+arabic_llm,26,66,141,172,229.3,3.47
+multilingual_steering,8,29,48,93,124.0,4.28
+value_steering_alignment,73,119,247,455,606.7,5.1
+steering_eval,46,139,472,730,973.3,7.0
+sae_features,18,82,340,476,634.7,7.74
+steering_core,25,76,243,466,621.3,8.17
+mech_interp_linear,22,86,233,646,861.3,10.02
+quran_islamic_nlp,6,3,25,30,40.0,13.33
+agent_prompt_injection,2,30,160,409,545.3,18.18
+agent_policy_enforcement,9,38,231,667,889.3,23.4
