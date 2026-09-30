@@ -112,8 +112,15 @@ retry uncertain effects. Default review lifetime is 300 seconds, capped by grant
 expiry. The host must display the exact pending action and obtain an independent
 decision before calling `approve`; the demo's simulated approval is not a UI.
 
-The schema rejects unknown top-level arguments and exact-type mismatches. Tool
-adapters must validate nested objects and business rules. Scopes use exact string
+The schema rejects unknown top-level arguments and exact-type mismatches. For
+nested values, pass `ToolSpec(..., validators={"arg": rule})`. A rule is either a
+callable that raises, or returns False, to reject, or a JSON-Schema subset
+(`type`, `enum`, `const`, string and array bounds, `pattern`, `items`,
+`uniqueItems`, `properties`, `required`, `additionalProperties`). Schemas compile
+when the spec is built; unknown keywords are errors, objects are closed unless
+`additionalProperties` allows more, and booleans never count as numbers. A failed
+check denies the action as `invalid_arguments` and stops the run. Adapters still
+own business rules that a schema cannot express. Scopes use exact string
 identifiers; empty sets are not wildcards. `TaskGrant.goal` documents intent but
 is not semantically evaluated by policy. The gateway is an importable component,
 not an authenticated HTTP service or an automatic wrapper around the research CLI.
