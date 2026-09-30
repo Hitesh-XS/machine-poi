@@ -115,6 +115,22 @@ steering defaults off and requires an explicit trusted-corpus opt-in.
   evaluated in the guardian implementation. Held-out model comparisons and host
   bypass/kill-switch drills remain acceptance gates.
 
+## Research directions and how to help
+
+A [literature map](docs/research_directions.md) of 7,322 recent arXiv papers
+places the project's strands in the field. Steering toward Arabic and Islamic
+content, with language controlled and capability measured, is almost empty, and
+this repository already has the corpus, controls, dose calibration and harness
+that question needs. The map lists open problems for collaborators, several of
+which need no code:
+
+- rating blinded steering outputs, and reviewing the Arabic prompts and controls;
+- adding QuranicMMLU, IslamicMMLU and PalmX to the evaluation harness;
+- running the gateway on AgentDojo and InjecAgent.
+
+To take one, open an [issue](https://github.com/gutama/machine-poi/issues) that
+names it.
+
 ## Documentation
 
 | Document | What it covers |
@@ -126,6 +142,7 @@ steering defaults off and requires an explicit trusted-corpus opt-in.
 | [Steering evaluation](docs/evaluation.md) | Evaluation harness spec, held-out prompts, metrics, rating rubric and provenance |
 | [Containment plan](docs/rogue_agent_containment_plan.md) | Baseline findings, delivered slices and remaining deployment gates |
 | [Research note](PAPER.md) | Implemented steering methods and the evidence supporting current claims |
+| [Research directions](docs/research_directions.md) | Literature map, recommended direction and open problems for collaborators |
 | [Workspace research roadmap](docs/global_workspace_improvement_plan.md) | Diagnostic work and experiments still planned |
 | [Improvement plan](docs/improvement_plan.md) | Whole-repository review findings and phased fixes |
 | [Geometry literature notes](docs/curvature_literature_roadmap_review.md) | Research leads; proposed connections require validation |

@@ -1,0 +1,24 @@
+{
+  "retrieved": "2026-09-30",
+  "source": "arXiv API (abstract search), citations from the Semantic Scholar batch API",
+  "date_from": "2023-01-01",
+  "date_to": "2026-09-30",
+  "cap_per_query": 3000,
+  "focus_corpus": "top decile of the deduplicated corpus by TF-IDF relevance to the project documents",
+  "clusters": "k-means, k = 12, on an LSA projection of the focus corpus; labels written by hand from top terms and titles",
+  "annualization": "2026 counts divided by 0.75 (January to September)",
+  "queries": {
+    "steering_core": "abs:\"activation steering\" OR abs:\"steering vector\" OR abs:\"steering vectors\" OR abs:\"activation addition\" OR abs:\"representation engineering\" OR abs:\"contrastive activation addition\"",
+    "steering_eval": "(abs:steering AND abs:\"language model\") AND (abs:\"side effects\" OR abs:capability OR abs:benchmark OR abs:reliability OR abs:evaluation OR abs:robustness)",
+    "sae_features": "abs:\"sparse autoencoder\" OR abs:\"sparse autoencoders\" OR abs:\"sparse dictionary\"",
+    "mech_interp_linear": "abs:\"linear representation hypothesis\" OR abs:\"residual stream\" OR abs:\"massive activations\" OR abs:\"attention sink\" OR abs:\"activation patching\"",
+    "multilingual_steering": "(abs:multilingual OR abs:\"cross-lingual\" OR abs:\"language-specific\") AND (abs:steering OR abs:neurons OR abs:\"language vector\" OR abs:\"language identity\")",
+    "cultural_religious_alignment": "(abs:religion OR abs:religious OR abs:islamic OR abs:muslim OR abs:cultural OR abs:culture) AND abs:\"language model\" AND (abs:alignment OR abs:values OR abs:bias OR abs:norms)",
+    "arabic_llm": "abs:arabic AND (abs:\"language model\" OR abs:LLM OR abs:LLMs) AND (abs:alignment OR abs:culture OR abs:cultural OR abs:evaluation OR abs:benchmark)",
+    "quran_islamic_nlp": "abs:quran OR abs:quranic OR abs:hadith OR abs:\"islamic knowledge\" OR abs:\"islamic jurisprudence\" OR abs:fiqh",
+    "agent_prompt_injection": "(abs:\"prompt injection\" OR abs:\"indirect prompt injection\") AND (abs:agent OR abs:agents OR abs:tool)",
+    "agent_policy_enforcement": "(abs:agent OR abs:agents) AND (abs:LLM OR abs:\"language model\") AND (abs:\"access control\" OR abs:\"policy enforcement\" OR abs:\"information flow\" OR abs:privilege OR abs:sandbox OR abs:guardrail OR abs:\"runtime monitor\")",
+    "attention_geometry": "abs:attention AND (abs:curvature OR abs:holonomy OR abs:sheaf OR abs:\"fiber bundle\" OR abs:\"gauge\" OR abs:\"parallel transport\" OR abs:commutativity)",
+    "value_steering_alignment": "(abs:steering OR abs:\"representation engineering\") AND (abs:values OR abs:persona OR abs:personality OR abs:moral OR abs:ethics OR abs:honesty)"
+  }
+}

@@ -1,0 +1,13 @@
+cluster_label,2023,2024,2025,2026,2026_annualized,growth_2026a_vs_2024
+"Activation-steering mechanics: layers, dosing, personas",1,1,8,68,90.7,90.7
+Agent runtime policy enforcement,0,1,7,62,82.7,82.7
+Indirect prompt injection: attacks and defenses,0,2,12,73,97.3,48.65
+Inference-time steering frameworks,1,4,20,66,88.0,22.0
+Curvature and Riemannian geometry of attention,5,2,10,17,22.7,11.35
+Arabic and cultural alignment,1,4,9,30,40.0,10.0
+SAE feature steering,0,6,21,35,46.7,7.78
+"Quran and Islamic QA, RAG and datasets",3,8,22,28,37.3,4.66
+Steering vectors: methods and safety pitfalls,3,12,24,30,40.0,3.33
+Agentic-AI security and privacy surveys,0,0,14,37,49.3,
+Authorization and capability architectures for agents,0,0,1,54,72.0,
+MCP / tool-protocol gateways,0,0,6,24,32.0,
