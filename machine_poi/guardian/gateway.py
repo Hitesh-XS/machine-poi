@@ -7,6 +7,7 @@ one process; distributed coordination and crash recovery require a host store.
 """
 
 import asyncio
+import hashlib
 import math
 import time
 from dataclasses import replace
@@ -64,6 +65,8 @@ class Gateway:
         self._max_runs = max_runs
         self._lock = RLock()
         self._runs = {}
+        self._retired = set()  # 16-byte digests of retired run IDs
+        self._unknown_callers = 0
         self._failed = False
         self._loop = None
 
@@ -79,7 +82,7 @@ class Gateway:
             raise RuntimeError("A gateway belongs to one event loop")
         return loop
 
-    def _event(self, run_id, action_hash, event, reason):
+    def _event(self, run_id, action_hash, event, reason, count=None):
         try:
             self._audit.append(
                 timestamp=self._clock(),
@@ -87,6 +90,7 @@ class Gateway:
                 action_hash=action_hash,
                 event=event,
                 reason=reason,
+                **({} if count is None else {"count": count}),
             )
         except Exception:
             self._failed = True
@@ -109,6 +113,7 @@ class Gateway:
             if (
                 self._failed
                 or grant.run_id in self._runs
+                or self._tombstone(grant.run_id) in self._retired
                 or len(self._runs) >= self._max_runs
             ):
                 raise ValueError(
@@ -152,6 +157,60 @@ class Gateway:
     def state(self, run_id):
         with self._lock:
             return self._runs[run_id].state
+
+    @staticmethod
+    def _tombstone(run_id):
+        return hashlib.sha256(run_id.encode("utf-8")).digest()[:16]
+
+    def retire(self, operator, run_id):
+        """Host-only: free a finished run's capacity; its ID can never be reissued.
+
+        The run must be stopped or expired, with no in-flight tasks and no
+        unretired child runs. An expired run is stopped first, so the host's
+        revocation callback still runs. Afterwards ``state(run_id)`` raises
+        KeyError and a new grant with the same ID is refused.
+        """
+        self._operator(operator)
+        with self._lock:
+            record = self._runs[run_id]
+            expired = self._clock() >= record.grant.expires_at
+            if record.state != RunState.STOPPED and not expired:
+                raise ValueError("Only stopped or expired runs can be retired")
+            if record.tasks:
+                raise ValueError("The run still has in-flight tasks")
+            if any(item.grant.parent_run_id == run_id for item in self._runs.values()):
+                raise ValueError("Retire child runs first")
+            if record.state != RunState.STOPPED:
+                self._stop_locked(run_id)
+            self._event(run_id, "", "run_retired", "operator_retire")
+            del self._runs[run_id]
+            self._retired.add(self._tombstone(run_id))
+            if self._failed:
+                raise RuntimeError("Host revocation failed; gateway stopped")
+
+    def stats(self, operator):
+        """Host-only counters: live and retired runs, unknown-caller requests."""
+        self._operator(operator)
+        with self._lock:
+            return {
+                "runs": len(self._runs),
+                "retired": len(self._retired),
+                "max_runs": self._max_runs,
+                "unknown_caller_requests": self._unknown_callers,
+                "audit_events": getattr(self._audit, "count", None),
+            }
+
+    def _unknown_caller(self):
+        """Count requests without a matching grant; audit a sample, not each one.
+
+        Callers without a grant control neither the run nor its budget, so
+        logging each request would let them grow the audit without bound. The
+        1st, 2nd, 4th, 8th... requests are recorded with the running count.
+        """
+        self._unknown_callers += 1
+        count = self._unknown_callers
+        if count & (count - 1) == 0:
+            self._event("", "", "unknown_caller", "identity_or_grant", count=count)
 
     def _stop_locked(self, run_id):
         # Revoke descendants too; do this before audit/callback errors can occur.
@@ -300,6 +359,9 @@ class Gateway:
             raise TypeError("Expected ProposedAction")
         with self._lock:
             record, _, scope, decision = self._assess(caller, action)
+            if record is None and decision.reason == "identity_or_grant":
+                self._unknown_caller()
+                return decision
             if record and scope and decision.verdict in (Verdict.ALLOW, Verdict.REVIEW):
                 if self._over_budget(record, scope):
                     decision = replace(
@@ -348,6 +410,9 @@ class Gateway:
                         replace(decision, verdict=Verdict.STOP, reason="attempt_limit"),
                         record,
                     )
+                if record is None and decision.reason == "identity_or_grant":
+                    self._unknown_caller()
+                    return ActionOutcome(decision, "blocked")
                 if (
                     record is None
                     or scope is None

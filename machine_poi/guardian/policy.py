@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable, Mapping, Optional
 
 from .contracts import (
     ActionScope,
@@ -13,6 +13,7 @@ from .contracts import (
     digest,
     identifier,
 )
+from .schema import compile_schema
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,9 @@ class ToolSpec:
     argument_types: dict[str, type]
     describe: Callable[[dict], ActionScope]
     execute: Callable[[dict, object], Awaitable[object]]
+    # Optional nested checks per argument: a JSON-Schema subset (see
+    # guardian/schema.py) or a callable that raises, or returns False, to reject.
+    validators: Optional[Mapping[str, Any]] = None
 
     def __post_init__(self):
         identifier(self.name)
@@ -32,6 +36,16 @@ class ToolSpec:
         object.__setattr__(
             self, "argument_types", MappingProxyType(dict(self.argument_types))
         )
+        validators = dict(self.validators or {})
+        if not set(validators) <= set(self.argument_types):
+            raise ValueError("Validators name unknown arguments")
+        checks = {
+            name: compile_schema(rule) if isinstance(rule, dict) else rule
+            for name, rule in validators.items()
+        }
+        if any(not callable(check) for check in checks.values()):
+            raise ValueError("A validator must be a schema dict or a callable")
+        object.__setattr__(self, "validators", MappingProxyType(checks))
 
     def resolve(self, action: ProposedAction) -> ActionScope:
         args = action.arguments
@@ -41,6 +55,9 @@ class ToolSpec:
             type(args[key]) is not kind for key, kind in self.argument_types.items()
         ):
             raise ValueError("Wrong tool argument type")
+        for name, check in self.validators.items():
+            if check(args[name]) is False:
+                raise ValueError("Tool argument failed validation")
         scope = self.describe(args)
         if type(scope) is not ActionScope:
             raise ValueError("Adapter must resolve an ActionScope")

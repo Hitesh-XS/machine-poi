@@ -69,40 +69,55 @@ default, so `make test-all` still inherits that exclusion. Explicitly clear the
 marker filter with `python -m pytest -m ''` only in an environment prepared for
 slow/model integration work. Those tests were not part of the validation below.
 
-## Recorded validation
+## What CI checks
 
-At implementation commit `57d36c0b44dc31e65e3708587725f874f720522e`,
-validated on 2026-09-29:
+The [workflow](../.github/workflows/containment.yml) runs on every pull request
+and every push to `main`. The Actions page for a commit is the record of what
+passed; this guide does not repeat test counts, which change with every change.
 
-| Check | Result | Scope |
-| --- | --- | --- |
-| Local full selected suite, Python 3.12.14 | 197 passed; 4 deselected | Mocked runtime/retrieval plus guardian tests |
-| Guardian subset | 29 passed | Identity/scope, approval changes, replay, budgets, delegation, stop, expiry, policy/audit/callback failure |
-| Runtime safety subset | 17 passed | Hook cleanup/restoration, concurrent sessions, real mode deltas, clamp dose, cache and model-loading controls |
-| Mock demos | Both passed | Authorized effects, pending approval and forbidden destination |
-| Synthetic action fixtures | 12/12 passed | 9 forbidden actions blocked, 0 unapproved mock side effects |
-| Benign fixtures | 3 cases; 0 false blocks; 1 review | One case intentionally pauses for approval |
-| GitHub Actions | All 3 jobs passed | Guardian on Python 3.10/3.12 and full offline runtime on 3.12 |
+| Job | Checks |
+| --- | --- |
+| `lint` | `ruff check .` with the pinned version |
+| `guardian` (Python 3.10 and 3.12, no ML packages) | Guardian tests: identity and scope, approvals, replay, budgets, delegation, stop, expiry, retirement, audit bounds, nested validation, and policy, audit and callback failure. Also the mock process demo and the action fixtures and scenarios. The 3.12 run uploads the fixture report as the `containment-eval-report` artifact. |
+| `runtime` (Python 3.12, CPU torch) | The offline suite: steering, pooling, dose calibration, recipes, retrieval, the evaluation harness on a tiny model, CLI and runtime safety |
 
-The local full suite emitted one existing `asyncio.get_event_loop()` deprecation
-warning. The [CI run](https://github.com/gutama/machine-poi/actions/runs/36528823005)
-and [workflow](../.github/workflows/containment.yml) provide the validation context.
-No model weights or live external-tool credentials were used in these checks.
+`tests/guardian/test_eval_report.py` regenerates the fixture report and fails if
+the committed [`results.json`](../evals/rogue_agent/results.json) is stale, so the
+committed report always matches the current fixtures and gateway. Regenerate it
+with `python -m evals.rogue_agent.run --output evals/rogue_agent/results.json`.
+No model weights or live external-tool credentials are used in CI.
 
 ## What the action fixtures measure
 
-[`cases.json`](../evals/rogue_agent/cases.json) contains proposed tool actions and
-expected decisions. The runner creates a fresh mock host for each case, submits
-the proposal and checks status/reason and mock side effects. The
-[committed report](../evals/rogue_agent/results.json) includes fixture SHA-256,
-Python version, timestamp, case results and local latency observations.
+[`cases.json`](../evals/rogue_agent/cases.json) contains single proposed tool
+actions and expected decisions. The runner creates a fresh mock host for each
+case, submits the proposal and checks status/reason and mock side effects.
+
+[`scenarios.json`](../evals/rogue_agent/scenarios.json) contains multi-step
+sequences run against one host with a simulated clock:
+
+- draft, review and approval, including a second approval of the same action;
+- rejection by stop, and an approval after the review window;
+- held work while a review is pending, and replay after execution;
+- concurrent submissions, including the pause race fixed in Phase 0 and a
+  budget race;
+- delegation that tries to widen scope or budget, and a parent stop that revokes
+  its child;
+- a stop, and a grant expiry, while a long job is in flight.
+
+Each scenario lists the exact side effects it permits; any others count as
+unapproved, and the runner exits non-zero if a step or effect count differs. The
+budget race shows the fail-closed design: the request that exhausts the budget
+stops the run, which also cancels reserved actions that had not yet run.
+
+The [committed report](../evals/rogue_agent/results.json) includes fixture and
+scenario SHA-256s, Python version, timestamp, per-case and per-step results and
+local latency observations.
 
 Fixture context text is descriptive; it is not submitted to an LLM. Consequently,
 these results measure policy enforcement once an action exists. They do not
 measure prompt-injection success, semantic goal adherence, steering efficacy, or
 general task completion. A pending benign review is not an executed task.
-Cancellation, approval replay, concurrent accounting and cross-run state behavior
-are covered separately by regression tests.
 
 To reproduce a report without replacing the committed evidence:
 

@@ -514,3 +514,137 @@ def test_tool_deadline_cancels_unfinished_async_work():
         assert not effects and gateway.state("short") == RunState.STOPPED
 
     run(scenario())
+
+
+def small_rig(**kwargs):
+    rig = Rig(**kwargs)
+    rig.gateway._max_runs = 1  # capacity is the resource retire frees
+    return rig
+
+
+def test_retire_frees_capacity_and_tombstones_the_run_id():
+    rig = small_rig()
+    other = replace(rig.grant, run_id="run2")
+    with pytest.raises(ValueError, match="capacity"):
+        rig.gateway.issue("operator", other)
+    with pytest.raises(ValueError, match="stopped or expired"):
+        rig.gateway.retire("operator", "run")
+    with pytest.raises(PermissionError):
+        rig.gateway.retire("agent", "run")
+
+    rig.gateway.stop("operator", "run")
+    rig.gateway.retire("operator", "run")
+    with pytest.raises(KeyError):
+        rig.gateway.state("run")
+    rig.gateway.issue("operator", other)  # capacity reused
+    assert rig.gateway.state("run2") == RunState.RUNNING
+
+    rig.gateway.stop("operator", "run2")
+    rig.gateway.retire("operator", "run2")
+    with pytest.raises(ValueError, match="already used"):
+        rig.gateway.issue("operator", rig.grant)  # a retired ID is never reissued
+    outcome = run(rig.gateway.submit("agent", rig.action()))
+    assert outcome.status == "blocked" and outcome.decision.reason == "identity_or_grant"
+    assert rig.gateway.stats("operator")["retired"] == 2
+    assert verify_records(rig.audit.records)
+
+
+def test_expired_runs_are_stopped_and_revoked_when_retired():
+    rig = Rig()
+    rig.now = 2000.0
+    rig.gateway.retire("operator", "run")
+    assert rig.revoked == ["run"]
+    events = [record["event"] for record in rig.audit.records]
+    assert events[-1] == "run_retired"
+
+
+def test_retire_waits_for_in_flight_tasks_and_children():
+    async def scenario():
+        started, release = asyncio.Event(), asyncio.Event()
+
+        async def slow(args, context):
+            started.set()
+            await release.wait()
+            return {}
+
+        rig = Rig(execute=slow)
+        child = replace(rig.grant, run_id="child", parent_run_id="run", max_actions=5)
+        rig.gateway.issue("operator", child)
+        task = asyncio.create_task(rig.gateway.submit("agent", rig.action()))
+        await started.wait()
+        rig.gateway.observe("operator", "run", "loop_indicator")
+        rig.now = 2000.0  # expired, but the dispatched task is still running
+        with pytest.raises(ValueError, match="in-flight"):
+            rig.gateway.retire("operator", "run")
+        release.set()
+        await task
+        with pytest.raises(ValueError, match="child"):
+            rig.gateway.retire("operator", "run")
+        rig.gateway.retire("operator", "child")
+        rig.gateway.retire("operator", "run")
+        assert rig.gateway.stats("operator")["runs"] == 0
+
+    run(scenario())
+
+
+def test_unknown_callers_are_counted_and_sampled_not_logged_one_by_one():
+    rig = Rig()
+    before = rig.audit.count
+    stranger = ProposedAction.create("run", "x", "write", {"resource": "r"})
+    for _ in range(10_000):
+        assert rig.gateway.preview("intruder", stranger).reason == "identity_or_grant"
+
+    async def submits():
+        for _ in range(3):
+            outcome = await rig.gateway.submit("intruder", stranger)
+            assert outcome.status == "blocked"
+
+    run(submits())
+    added = rig.audit.records[before:]
+    assert len(added) == 14  # counts 1, 2, 4, ..., 8192
+    assert {record["event"] for record in added} == {"unknown_caller"}
+    assert added[-1]["count"] == 8192 and "intruder" not in str(added)
+    assert rig.gateway.stats("operator")["unknown_caller_requests"] == 10_003
+    assert rig.gateway.state("run") == RunState.RUNNING  # nobody else's run is stopped
+    assert verify_records(rig.audit.records)
+
+
+def test_bounded_audit_tail_streams_the_full_chain_to_the_sink(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    audit = AuditLog(path, tail=5)
+    rig = Rig(audit=audit)
+
+    async def actions():
+        for index in range(4):
+            outcome = await rig.gateway.submit("agent", rig.action(f"a{index}"))
+            assert outcome.status == "executed"
+
+    run(actions())
+    assert audit.count == 9 and len(audit.records) == 5  # issue + dispatch/outcome each
+    assert audit.verify()
+    assert audit.records[0]["sequence"] == 4
+
+    reopened = AuditLog(path, tail=5)  # stream-verifies the file, keeps the tail
+    assert (reopened.count, reopened.head) == (audit.count, audit.head)
+    assert reopened.records == audit.records
+    lines = path.read_text().splitlines()
+    lines[3] = lines[3].replace("dispatch", "altered")
+    path.write_text("\n".join(lines) + "\n")
+    assert not audit.verify()
+    with pytest.raises(ValueError, match="Invalid audit chain"):
+        AuditLog(path, tail=5)
+
+
+def test_audit_sinks_can_be_callables_and_tails_need_a_sink():
+    lines = []
+    audit = AuditLog(sink=lines.append, tail=2)
+    for index in range(5):
+        audit.append(timestamp=index, run_id="r", action_hash="", event="e", reason="x")
+    assert len(lines) == 5 and len(audit.records) == 2 and audit.verify()
+    import json
+
+    assert verify_records([json.loads(line) for line in lines])
+    with pytest.raises(ValueError, match="sink"):
+        AuditLog(tail=10)
+    with pytest.raises(ValueError, match="positive"):
+        AuditLog(sink=lines.append, tail=0)

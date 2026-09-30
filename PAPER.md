@@ -243,13 +243,15 @@ state is in memory and belongs to one host process/event loop. Authentication,
 OS isolation, durable multi-host coordination and remote-effect reconciliation
 are integration responsibilities.
 
-At implementation commit `57d36c0`, validation passed 197 selected local tests
-(four slow/integration cases excluded) and all CI jobs. Twelve synthetic action
-fixtures passed: nine forbidden actions were blocked, with no unapproved mock
-effects, while three benign cases had no false blocks and one required review.
-These fixtures start from proposed actions and do not run an LLM. They demonstrate
-the tested gateway behavior, not prompt-injection resistance or live-agent safety.
-See [testing](docs/testing.md) for provenance and reproduction commands.
+CI runs the gateway tests, and a report of synthetic action fixtures, on every
+change; a test fails the build if the committed report is stale. The fixtures
+include forbidden and benign single actions and multi-step scenarios covering
+review and approval, concurrent submissions, delegation and stops while a job is
+in flight. In the committed [report](evals/rogue_agent/results.json), every
+case and scenario passes with no unapproved mock effects. The fixtures start from
+proposed actions and do not run an LLM. They demonstrate the tested gateway
+behavior, not prompt-injection resistance or live-agent safety. See
+[testing](docs/testing.md) for what CI covers and how to reproduce it.
 
 ## 7. Limitations and next experiments
 
