@@ -4,8 +4,8 @@
 [Containment plan](rogue_agent_containment_plan.md) ·
 [Workspace roadmap](global_workspace_improvement_plan.md)
 
-Status: all phases (0–5) delivered by 2026-09-30. Owner decisions 1 (license
-and corpus provenance) and 6 (budget exhaustion) below remain open. Reviewed at commit
+Status: all phases (0–5) delivered by 2026-09-30. Owner decision 1 (license
+and corpus provenance) below remains open. Reviewed at commit
 `8be027d`. Paths and line numbers in the findings refer to that commit; Phase 1
 moved `src/` to `machine_poi/`.
 
@@ -261,7 +261,7 @@ Delivered as one commit per item with tests. Notes beyond the table:
 - **G4 (scenario fixtures):** 11 scenarios (46 steps). Reintroducing the G1 bug
   fails the concurrency scenario. The budget race shows that the request which
   exhausts a budget stops the run and cancels reserved actions that had not yet
-  run; see decision 6.
+  run; decision 6 keeps this behavior.
 - **E7 (evidence in docs):** exact test counts were removed from the README,
   PAPER, testing guide and containment plan. CI uploads the fixture report as an
   artifact, and `tests/guardian/test_eval_report.py` fails if the committed
@@ -291,11 +291,10 @@ staged enforcement) stay in the [containment plan](rogue_agent_containment_plan.
    until the review resolves and refunds the reservation, which adds latency and
    code. Revisit if a host needs pause to freeze in-flight work.
 5. **Projection-based vectors (M6).** Decided: deleted.
-6. **Budget exhaustion (G4).** Currently a request that would exceed a budget
-   stops the run, which also cancels reserved actions that have not started. The
-   alternative denies only that request and lets reserved actions finish. It is
-   less disruptive under concurrent load, and still fail-closed for the budget
-   itself.
+6. **Budget exhaustion (G4).** Decided (2026-09-30): keep the current behavior.
+   A request that would exceed a budget stops the run, which also cancels
+   reserved actions that have not started. The alternative, denying only that
+   request and letting reserved actions finish, was declined.
 
 ## Not recommended
 

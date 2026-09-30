@@ -191,7 +191,7 @@ not an authenticated HTTP service or an automatic wrapper around the research CL
 | Unknown/missing grant or wrong authenticated caller | Deny; do not grant access or stop another principal's run. Such requests are counted, and only the 1st, 2nd, 4th, 8th... are audited, with the running count |
 | Bad schema, forbidden tool/resource/destination/data class, or replay | Block and stop that run and its descendants |
 | Sensitive action within scope | Pause; execute only after bound host review |
-| Grant/approval expiry, exhausted budget, policy outage | Block and stop |
+| Grant/approval expiry, exhausted budget, policy outage | Block and stop. Stopping also cancels actions already reserved but not yet started, so a request that exceeds a budget under concurrent load can leave none of the concurrent actions executed; this is intended |
 | Audit append fails before dispatch | Stop; no tool execution |
 | Tool failure, timeout, cancellation, or outcome audit failure | Stop; return interrupted/uncertain status, never retry automatically |
 | Explicit kill switch | Mark stopped, cancel queued/in-flight tasks cooperatively, revoke descendants, invoke host callback |
