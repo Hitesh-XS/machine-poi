@@ -102,6 +102,8 @@ upper bounds and receive matching grant budgets.
 | `observe(operator, run_id, signal)` | Host records a known risk signal without adding authority |
 | `preview(caller, action)` | Host shadow inspection; records an audit decision without dispatch or budget reservation |
 | `state(run_id)` | Host reads current run state |
+| `retire(operator, run_id)` | Host frees a stopped or expired run with no in-flight tasks or live children; the run ID can never be reissued |
+| `stats(operator)` | Host reads live and retired run counts, unknown-caller requests and audit event count |
 
 `ActionOutcome` carries `decision`, `status` and optional `result`. Inspect the
 status before consuming a result: `pending` needs review; `blocked` did not
@@ -163,14 +165,23 @@ not an authenticated HTTP service or an automatic wrapper around the research CL
    results, model text and raw exceptions. The hash chain detects ordinary edits
    against a known chain, not malicious rewriting/truncation by the storage
    owner; externally anchor receipts or use an append-only service for stronger
-   integrity. The in-memory audit keeps all records for the process lifetime;
-   production needs a bounded streaming sink with retention/access controls.
+   integrity. By default the audit keeps every record in memory. For long-running
+   hosts, pass `AuditLog(path, tail=N)` or `AuditLog(sink=callable, tail=N)`: every
+   event is written through to the sink (fsynced for a path) and only the last N
+   stay in memory. `count` and `head` continue the chain, and `verify()` re-checks
+   the whole file. Retention and access controls for the sink are host
+   responsibilities.
+9. Retire finished runs. `issue` refuses new grants once `max_runs` runs are live.
+   `retire` frees a stopped or expired run once its tasks have finished and its
+   child runs are retired; an expired run is stopped first, so `on_stop` still
+   revokes its credentials. A 16-byte tombstone per retired ID keeps it from being
+   reissued, so replay protection outlives the run.
 
 ## State and failure semantics
 
 | Event | Result |
 | --- | --- |
-| Unknown/missing grant or wrong authenticated caller | Deny; do not grant access or stop another principal's run |
+| Unknown/missing grant or wrong authenticated caller | Deny; do not grant access or stop another principal's run. Such requests are counted, and only the 1st, 2nd, 4th, 8th... are audited, with the running count |
 | Bad schema, forbidden tool/resource/destination/data class, or replay | Block and stop that run and its descendants |
 | Sensitive action within scope | Pause; execute only after bound host review |
 | Grant/approval expiry, exhausted budget, policy outage | Block and stop |
