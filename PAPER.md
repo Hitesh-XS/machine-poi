@@ -16,9 +16,10 @@ grants, with bound operator review, budgets, replay prevention and revocation.
 
 These components address different questions: steering experiments examine
 changes in generated behavior; the gateway constrains authorized effects at a
-trusted host boundary. Committed model runs include output collapse and
-language/persona spillover, so this note does not claim preserved general
-capabilities or reliable moral alignment. Gateway validation consists of mocked
+trusted host boundary. On a held-out evaluation of a 0.5B model, stronger steering
+traded capability for religious register and degenerated at the highest dose, so
+this note does not claim preserved general capabilities or reliable moral
+alignment. Gateway validation consists of mocked
 regression tests and synthetic proposed-action fixtures. Live-host protection and
 held-out agent/model comparisons remain unmeasured.
 
@@ -153,43 +154,78 @@ objects. Metadata detects accidental reuse, not malicious artifact forgery.
 
 ## 5. Experimental evidence
 
-The evidence source is the committed JSON and interpretation in
-[`experiments/results/`](experiments/results/README.md). These historical runs were
-not repeated during the containment implementation. Earlier narrative output
-examples and thematic/coherence scores are omitted here because this repository's
-reproduction script does not substantiate that scored table.
+Steering claims in this note cite one run of the evaluation harness,
+`experiments/steering_eval.py` ([evaluation guide](docs/evaluation.md); results in
+[`experiments/results/`](experiments/results/README.md)). The earlier probes in that
+folder predate the harness. They used 1-16 prompts without held-out separation or
+capability checks; they motivated the harness but are not cited as evidence here.
 
-### 5.1 Qualitative behavior
+### 5.1 Protocol
 
-The small-model raw-mean runs report degenerate generation. Calibrated centered
-Gemma runs report fluent Arabic responses and small pooled transport changes in
-some conditions. The four-prompt results on each of two Gemma variants also show
-language shifts on neutral prompts and content drift in an engineering answer.
-A persona effect is therefore not evidence of selective improvement or preserved
-capability. The small samples do not establish model-wide generality.
+The run steered `Qwen/Qwen2.5-0.5B-Instruct` (revision `7ae5576`) on CPU from
+commit `7a745e0`. It used 48 held-out prompts: 8 neutral, 8 value-laden and 8
+technical prompts in English, with Modern Standard Arabic translations. None
+repeats or nearly repeats a control or calibration sentence or a prompt from the
+earlier experiments. Decoding was greedy, 80 tokens, with the chat template.
+Vectors came from 50 sampled verses and were applied to layers 8-15. Doses were
+calibrated ratios; the achieved peak ratio was 1-10% above target. The eight
+conditions were:
 
-### 5.2 Thematic measurement
+- an unsteered baseline;
+- the raw mean at ratio 0.1;
+- centered vectors at 0.05, 0.1 and 0.2;
+- centering on the English control at 0.1;
+- retrieval (the multi-resolution prompt) alone;
+- retrieval with centered steering at 0.1.
 
-`experiments/reproduce_paper.py --section 5.2` counts English keyword substrings
-and distinct religious markers per response. Its reported religious rate can
-exceed 100%, and it has no independent coherence score. It does not measure moral
-reasoning, multilingual semantic consistency, or authorization. A publishable
-behavioral evaluation needs a documented rubric, held-out tasks, language controls
-and a comparison protocol.
+The metrics were Arabic-script output rates, a degeneration flag, NLL under
+the unsteered model, zero-shot ARC-Easy accuracy on 100 items, an embedding
+thematic proxy and attention transport. Intervals are 95% bootstrap intervals
+over prompts or items, with differences paired against the baseline.
 
-### 5.3 Dose and geometry
+### 5.2 Results
 
-The result report includes 16-prompt reruns for raw-mean SmolLM2/Qwen conditions
-and centered SmolLM2. Centered SmolLM2 still shows collapsed generation at a
-calibrated perturbation target of at most 0.1. The small Gemma conditions differ.
-This motivates model/task-specific evaluation and rules out treating a small
-perturbation ratio alone as a safety guarantee.
+| Condition | Degenerate outputs | ΔNLL | ΔARC-Easy | Δ thematic proxy |
+| --- | --- | --- | --- | --- |
+| raw mean, 0.1 | 0.00 [0.00, 0.00] | +0.36 [+0.29, +0.44] | -0.06 [-0.13, +0.01] | +0.02 [-0.01, +0.04] |
+| centered, 0.05 | 0.00 [0.00, 0.00] | +0.19 [+0.13, +0.26] | -0.02 [-0.07, +0.03] | +0.08 [+0.04, +0.13] |
+| centered, 0.1 | 0.06 [0.00, 0.12] | +1.11 [+0.93, +1.28] | -0.15 [-0.25, -0.06] | +0.32 [+0.25, +0.39] |
+| centered, 0.2 | 0.81 [0.71, 0.92] | +1.71 [+1.39, +2.03] | -0.21 [-0.32, -0.09] | +0.31 [+0.25, +0.37] |
+| English control, 0.1 | 0.00 [0.00, 0.00] | +0.29 [+0.24, +0.34] | -0.05 [-0.11, +0.01] | +0.02 [-0.00, +0.05] |
+| retrieval only | 0.00 [0.00, 0.00] | +0.02 [-0.06, +0.09] | (baseline hooks) | +0.12 [+0.08, +0.16] |
+| retrieval + centered, 0.1 | 0.21 [0.10, 0.33] | +0.83 [+0.57, +1.09] | (as centered, 0.1) | +0.33 [+0.27, +0.39] |
 
-Transport changes must be read alongside text and task performance. A large shift
-can accompany collapse; little pooled change can coexist with language or content
-drift. Historical baseline-formatting and measurement limitations are recorded
-with the results. The demonstration runner's section 5.3 prints text previews and
-lengths for different coefficients, not validated coherence/thematic scores.
+Baseline ARC-Easy accuracy was 0.61 [0.51, 0.71] and no baseline output
+degenerated.
+
+Centered steering showed a dose-response trade-off. At ratio 0.05, accuracy was
+unchanged within its interval and the thematic proxy rose slightly. At 0.1 the
+proxy rose about four times as much, but accuracy fell by 15 points (paired
+p = 0.005). A religious register also appeared in answers to neutral science
+prompts. At 0.2, most outputs degenerated.
+
+The raw mean moved outputs without a detectable thematic change, which is why
+centering is the default. No steered condition without retrieval answered any
+English prompt in Arabic script, under either control. The English control
+produced a much weaker direction than the Arabic one at the same ratio.
+
+Retrieval alone raised the proxy without changing NLL, but it answered none of
+the Arabic prompts in Arabic script: the template's instructions are English.
+Mean attention-transport ρ and holonomy fell as the centered dose rose. They are
+geometric measurements, not behavior.
+
+### 5.3 What the run does not show
+
+- It covers one 0.5B model with greedy decoding; other models, sampling and
+  intermediate doses are untested.
+- The script metric counts Arabic script, not language.
+- The thematic proxy rewards a religious register whether or not it answers the
+  prompt, so it cannot show relevance. A blinded sheet of 48 value-prompt
+  outputs awaits two human raters under the documented rubric.
+- Degeneration counts are lower bounds; the detector misses loops longer than
+  four characters.
+- The Arabic prompts and control sentences await a native-speaker review.
+- Nothing here measures moral reasoning, refusal behavior or authorization.
 
 ## 6. Host-side action containment
 
@@ -225,28 +261,29 @@ design. These limits require a concrete deployment inventory and response drills
 Next evaluations should compare baseline, steering-only, gateway-only and combined
 conditions on held-out benign/adversarial tasks, with matched prompts and model
 settings. Report task success, unauthorized effects, false blocks, review burden,
-latency and containment time. Separately test language/register confounding,
-centering, normalization, layer bands and decoding before making steering claims.
+latency and containment time. For steering, the next evaluation steps are:
+
+- collect the human ratings;
+- repeat the harness on more models and with sampled decoding;
+- test doses between 0.05 and 0.1 and other layer bands;
+- write an Arabic retrieval template;
+- measure refusals;
+- widen the degeneration detector, tuning it on the dev split.
+
 The [containment plan](docs/rogue_agent_containment_plan.md) and
 [workspace roadmap](docs/global_workspace_improvement_plan.md) track these gates.
 
-## Appendix: running the research demonstration
+## Appendix: running the evaluation
 
 After installing the research dependencies, run from the repository root:
 
 ```bash
-python experiments/reproduce_paper.py --model deepseek-r1-1.5b --section 5.1 --quick
-python experiments/reproduce_paper.py --section 5.2 --quick
-python experiments/reproduce_paper.py --section 5.3 --quick
+python experiments/steering_eval.py --spec experiments/specs/qwen2.5-0.5b.json
+python experiments/steering_eval.py --score-ratings \
+    experiments/results/qwen2.5-0.5b_phase4_rating_key.json rater_a.csv rater_b.csv
 ```
 
-The section identifiers remain those used by the existing script. These commands
-load models and produce new samples; they do not reproduce an independently
-validated thematic/coherence table. The [testing guide](docs/testing.md) describes
-the offline regression suite and separate attention-transport experiments.
-
-## References
-
-1. Turner, A. M. et al. (2024 revision). *Steering Language Models With Activation Engineering.* [arXiv:2308.10248](https://arxiv.org/abs/2308.10248).
-2. Rimsky, N., Gabrieli, N., Schulz, J., Tong, M., Hubinger, E., and Turner, A. (2024). *Steering Llama 2 via Contrastive Activation Addition.* ACL, pp. 15504–15522. [ACL Anthology](https://aclanthology.org/2024.acl-long.828/).
-3. Lewis, P. et al. (2020). *Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks.* [arXiv:2005.11401](https://arxiv.org/abs/2005.11401).
+The first command reproduces section 5; the second scores the blinded ratings
+once two raters have filled in copies of the sheet. `experiments/reproduce_paper.py`
+only prints sample outputs for demonstration. Its keyword-counting section 5.2 is
+retired, and its numbering does not match this note.

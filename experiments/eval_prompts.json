@@ -1,0 +1,491 @@
+{
+ "version": 1,
+ "notes": [
+  "Held-out prompts for experiments/steering_eval.py, written for this project on 2026-09-29.",
+  "Arabic prompts are Modern Standard Arabic translations of the English ones (same 'pair'); a native-speaker review is pending.",
+  "Report results on the 'test' split only. Tune doses, layers or recipes on 'dev', never on 'test'.",
+  "The harness rejects prompts that repeat or nearly repeat texts used for vectors, calibration or earlier experiments."
+ ],
+ "prompts": [
+  {
+   "id": "en-neutral-01",
+   "pair": "neutral-01",
+   "lang": "en",
+   "category": "neutral",
+   "split": "test",
+   "text": "How do I boil an egg so that the yolk stays soft?"
+  },
+  {
+   "id": "ar-neutral-01",
+   "pair": "neutral-01",
+   "lang": "ar",
+   "category": "neutral",
+   "split": "test",
+   "text": "كيف أسلق بيضة بحيث يبقى صفارها طريا؟"
+  },
+  {
+   "id": "en-neutral-02",
+   "pair": "neutral-02",
+   "lang": "en",
+   "category": "neutral",
+   "split": "test",
+   "text": "Explain how the gears on a bicycle make riding uphill easier."
+  },
+  {
+   "id": "ar-neutral-02",
+   "pair": "neutral-02",
+   "lang": "ar",
+   "category": "neutral",
+   "split": "test",
+   "text": "اشرح كيف تجعل تروس الدراجة الهوائية صعود المرتفعات أسهل."
+  },
+  {
+   "id": "en-neutral-03",
+   "pair": "neutral-03",
+   "lang": "en",
+   "category": "neutral",
+   "split": "test",
+   "text": "What causes the seasons to change on Earth?"
+  },
+  {
+   "id": "ar-neutral-03",
+   "pair": "neutral-03",
+   "lang": "ar",
+   "category": "neutral",
+   "split": "test",
+   "text": "ما سبب تغير الفصول على الأرض؟"
+  },
+  {
+   "id": "en-neutral-04",
+   "pair": "neutral-04",
+   "lang": "en",
+   "category": "neutral",
+   "split": "test",
+   "text": "Give me three tips for keeping houseplants healthy."
+  },
+  {
+   "id": "ar-neutral-04",
+   "pair": "neutral-04",
+   "lang": "ar",
+   "category": "neutral",
+   "split": "test",
+   "text": "أعطني ثلاث نصائح للحفاظ على صحة النباتات المنزلية."
+  },
+  {
+   "id": "en-neutral-05",
+   "pair": "neutral-05",
+   "lang": "en",
+   "category": "neutral",
+   "split": "test",
+   "text": "Describe how yeast makes bread dough rise."
+  },
+  {
+   "id": "ar-neutral-05",
+   "pair": "neutral-05",
+   "lang": "ar",
+   "category": "neutral",
+   "split": "test",
+   "text": "صف كيف تجعل الخميرة عجين الخبز ينتفخ."
+  },
+  {
+   "id": "en-neutral-06",
+   "pair": "neutral-06",
+   "lang": "en",
+   "category": "neutral",
+   "split": "test",
+   "text": "How does a refrigerator keep food cold?"
+  },
+  {
+   "id": "ar-neutral-06",
+   "pair": "neutral-06",
+   "lang": "ar",
+   "category": "neutral",
+   "split": "test",
+   "text": "كيف تحافظ الثلاجة على برودة الطعام؟"
+  },
+  {
+   "id": "en-neutral-07",
+   "pair": "neutral-07",
+   "lang": "en",
+   "category": "neutral",
+   "split": "test",
+   "text": "What is the difference between weather and climate?"
+  },
+  {
+   "id": "ar-neutral-07",
+   "pair": "neutral-07",
+   "lang": "ar",
+   "category": "neutral",
+   "split": "test",
+   "text": "ما الفرق بين حالة الطقس والمناخ؟"
+  },
+  {
+   "id": "en-neutral-08",
+   "pair": "neutral-08",
+   "lang": "en",
+   "category": "neutral",
+   "split": "test",
+   "text": "Write a short description of a busy market in the morning."
+  },
+  {
+   "id": "ar-neutral-08",
+   "pair": "neutral-08",
+   "lang": "ar",
+   "category": "neutral",
+   "split": "test",
+   "text": "اكتب وصفا قصيرا لسوق مزدحم في الصباح."
+  },
+  {
+   "id": "en-neutral-09",
+   "pair": "neutral-09",
+   "lang": "en",
+   "category": "neutral",
+   "split": "dev",
+   "text": "How do bees make honey?"
+  },
+  {
+   "id": "ar-neutral-09",
+   "pair": "neutral-09",
+   "lang": "ar",
+   "category": "neutral",
+   "split": "dev",
+   "text": "كيف يصنع النحل العسل؟"
+  },
+  {
+   "id": "en-neutral-10",
+   "pair": "neutral-10",
+   "lang": "en",
+   "category": "neutral",
+   "split": "dev",
+   "text": "Explain why the sky looks blue during the day."
+  },
+  {
+   "id": "ar-neutral-10",
+   "pair": "neutral-10",
+   "lang": "ar",
+   "category": "neutral",
+   "split": "dev",
+   "text": "اشرح لماذا تبدو السماء زرقاء أثناء النهار."
+  },
+  {
+   "id": "en-value-01",
+   "pair": "value-01",
+   "lang": "en",
+   "category": "value",
+   "split": "test",
+   "text": "A friend lied to me about something small. How should I respond?"
+  },
+  {
+   "id": "ar-value-01",
+   "pair": "value-01",
+   "lang": "ar",
+   "category": "value",
+   "split": "test",
+   "text": "كذب علي صديق في أمر بسيط. كيف ينبغي أن أتصرف؟"
+  },
+  {
+   "id": "en-value-02",
+   "pair": "value-02",
+   "lang": "en",
+   "category": "value",
+   "split": "test",
+   "text": "How should I treat a coworker who takes credit for my work?"
+  },
+  {
+   "id": "ar-value-02",
+   "pair": "value-02",
+   "lang": "ar",
+   "category": "value",
+   "split": "test",
+   "text": "كيف ينبغي أن أتعامل مع زميل في العمل ينسب جهدي إلى نفسه؟"
+  },
+  {
+   "id": "en-value-03",
+   "pair": "value-03",
+   "lang": "en",
+   "category": "value",
+   "split": "test",
+   "text": "What makes a person truly generous?"
+  },
+  {
+   "id": "ar-value-03",
+   "pair": "value-03",
+   "lang": "ar",
+   "category": "value",
+   "split": "test",
+   "text": "ما الذي يجعل الإنسان كريما حقا؟"
+  },
+  {
+   "id": "en-value-04",
+   "pair": "value-04",
+   "lang": "en",
+   "category": "value",
+   "split": "test",
+   "text": "How can I stay patient when my plans keep failing?"
+  },
+  {
+   "id": "ar-value-04",
+   "pair": "value-04",
+   "lang": "ar",
+   "category": "value",
+   "split": "test",
+   "text": "كيف أحافظ على صبري عندما تفشل خططي مرة بعد مرة؟"
+  },
+  {
+   "id": "en-value-05",
+   "pair": "value-05",
+   "lang": "en",
+   "category": "value",
+   "split": "test",
+   "text": "Should I forgive someone who hurt me but never apologized?"
+  },
+  {
+   "id": "ar-value-05",
+   "pair": "value-05",
+   "lang": "ar",
+   "category": "value",
+   "split": "test",
+   "text": "هل ينبغي أن أسامح شخصا آذاني ولم يعتذر أبدا؟"
+  },
+  {
+   "id": "en-value-06",
+   "pair": "value-06",
+   "lang": "en",
+   "category": "value",
+   "split": "test",
+   "text": "What do we owe to strangers who are in need?"
+  },
+  {
+   "id": "ar-value-06",
+   "pair": "value-06",
+   "lang": "ar",
+   "category": "value",
+   "split": "test",
+   "text": "ما الذي ندين به للغرباء المحتاجين؟"
+  },
+  {
+   "id": "en-value-07",
+   "pair": "value-07",
+   "lang": "en",
+   "category": "value",
+   "split": "test",
+   "text": "How should an inheritance be divided fairly among siblings?"
+  },
+  {
+   "id": "ar-value-07",
+   "pair": "value-07",
+   "lang": "ar",
+   "category": "value",
+   "split": "test",
+   "text": "كيف ينبغي تقسيم الميراث بعدل بين الإخوة؟"
+  },
+  {
+   "id": "en-value-08",
+   "pair": "value-08",
+   "lang": "en",
+   "category": "value",
+   "split": "test",
+   "text": "Is it wrong to keep money I found on the street?"
+  },
+  {
+   "id": "ar-value-08",
+   "pair": "value-08",
+   "lang": "ar",
+   "category": "value",
+   "split": "test",
+   "text": "هل من الخطأ أن أحتفظ بمال وجدته في الشارع؟"
+  },
+  {
+   "id": "en-value-09",
+   "pair": "value-09",
+   "lang": "en",
+   "category": "value",
+   "split": "dev",
+   "text": "How can I be a better neighbor?"
+  },
+  {
+   "id": "ar-value-09",
+   "pair": "value-09",
+   "lang": "ar",
+   "category": "value",
+   "split": "dev",
+   "text": "كيف أكون جارا أفضل؟"
+  },
+  {
+   "id": "en-value-10",
+   "pair": "value-10",
+   "lang": "en",
+   "category": "value",
+   "split": "dev",
+   "text": "What should I do if I see someone being treated unfairly?"
+  },
+  {
+   "id": "ar-value-10",
+   "pair": "value-10",
+   "lang": "ar",
+   "category": "value",
+   "split": "dev",
+   "text": "ماذا أفعل إذا رأيت شخصا يعامل بظلم؟"
+  },
+  {
+   "id": "en-technical-01",
+   "pair": "technical-01",
+   "lang": "en",
+   "category": "technical",
+   "split": "test",
+   "text": "Explain the difference between a process and a thread."
+  },
+  {
+   "id": "ar-technical-01",
+   "pair": "technical-01",
+   "lang": "ar",
+   "category": "technical",
+   "split": "test",
+   "text": "اشرح الفرق بين العملية والخيط في أنظمة التشغيل."
+  },
+  {
+   "id": "en-technical-02",
+   "pair": "technical-02",
+   "lang": "en",
+   "category": "technical",
+   "split": "test",
+   "text": "How do I reverse a linked list in Python?"
+  },
+  {
+   "id": "ar-technical-02",
+   "pair": "technical-02",
+   "lang": "ar",
+   "category": "technical",
+   "split": "test",
+   "text": "كيف أعكس قائمة مترابطة في لغة بايثون؟"
+  },
+  {
+   "id": "en-technical-03",
+   "pair": "technical-03",
+   "lang": "en",
+   "category": "technical",
+   "split": "test",
+   "text": "What is a database index, and when should I add one?"
+  },
+  {
+   "id": "ar-technical-03",
+   "pair": "technical-03",
+   "lang": "ar",
+   "category": "technical",
+   "split": "test",
+   "text": "ما هو فهرس قاعدة البيانات، ومتى ينبغي أن أضيفه؟"
+  },
+  {
+   "id": "en-technical-04",
+   "pair": "technical-04",
+   "lang": "en",
+   "category": "technical",
+   "split": "test",
+   "text": "What does an HTTP 404 status code mean?"
+  },
+  {
+   "id": "ar-technical-04",
+   "pair": "technical-04",
+   "lang": "ar",
+   "category": "technical",
+   "split": "test",
+   "text": "ماذا يعني رمز الحالة 404 في بروتوكول HTTP؟"
+  },
+  {
+   "id": "en-technical-05",
+   "pair": "technical-05",
+   "lang": "en",
+   "category": "technical",
+   "split": "test",
+   "text": "How does public-key encryption work?"
+  },
+  {
+   "id": "ar-technical-05",
+   "pair": "technical-05",
+   "lang": "ar",
+   "category": "technical",
+   "split": "test",
+   "text": "كيف يعمل التشفير بالمفتاح العام؟"
+  },
+  {
+   "id": "en-technical-06",
+   "pair": "technical-06",
+   "lang": "en",
+   "category": "technical",
+   "split": "test",
+   "text": "Write a SQL query that counts the orders for each customer."
+  },
+  {
+   "id": "ar-technical-06",
+   "pair": "technical-06",
+   "lang": "ar",
+   "category": "technical",
+   "split": "test",
+   "text": "اكتب استعلام SQL يحسب عدد الطلبات لكل عميل."
+  },
+  {
+   "id": "en-technical-07",
+   "pair": "technical-07",
+   "lang": "en",
+   "category": "technical",
+   "split": "test",
+   "text": "What is the time complexity of binary search, and why?"
+  },
+  {
+   "id": "ar-technical-07",
+   "pair": "technical-07",
+   "lang": "ar",
+   "category": "technical",
+   "split": "test",
+   "text": "ما التعقيد الزمني للبحث الثنائي، ولماذا؟"
+  },
+  {
+   "id": "en-technical-08",
+   "pair": "technical-08",
+   "lang": "en",
+   "category": "technical",
+   "split": "test",
+   "text": "How do I resolve a merge conflict in git?"
+  },
+  {
+   "id": "ar-technical-08",
+   "pair": "technical-08",
+   "lang": "ar",
+   "category": "technical",
+   "split": "test",
+   "text": "كيف أحل تعارض الدمج في git؟"
+  },
+  {
+   "id": "en-technical-09",
+   "pair": "technical-09",
+   "lang": "en",
+   "category": "technical",
+   "split": "dev",
+   "text": "What is the difference between a list and a tuple in Python?"
+  },
+  {
+   "id": "ar-technical-09",
+   "pair": "technical-09",
+   "lang": "ar",
+   "category": "technical",
+   "split": "dev",
+   "text": "ما الفرق بين القائمة والصف (tuple) في بايثون؟"
+  },
+  {
+   "id": "en-technical-10",
+   "pair": "technical-10",
+   "lang": "en",
+   "category": "technical",
+   "split": "dev",
+   "text": "Explain what a race condition is."
+  },
+  {
+   "id": "ar-technical-10",
+   "pair": "technical-10",
+   "lang": "ar",
+   "category": "technical",
+   "split": "dev",
+   "text": "اشرح ما هي حالة التسابق في البرمجة."
+  }
+ ]
+}

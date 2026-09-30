@@ -859,6 +859,42 @@ class SteeredLLM:
         return steered, unsteered
 
     @synchronized
+    def continuation_logprob(
+        self,
+        context: str,
+        continuation: str,
+        add_special_tokens: bool = True,
+    ) -> Tuple[float, int]:
+        """
+        Sum log-probability of ``continuation`` following ``context``.
+
+        Runs one forward pass under whatever steering hooks are enabled; wrap
+        the call in :meth:`steering_disabled` to score under the unsteered
+        model. The continuation is tokenized on its own, without special
+        tokens, and appended to the context tokens. Pass
+        ``add_special_tokens=False`` for a context that is already
+        chat-templated, as generation does.
+
+        Returns:
+            (sum of log-probabilities, number of continuation tokens)
+        """
+        if self.model is None:
+            self.load_model()
+        context_ids = self.tokenizer(context, add_special_tokens=add_special_tokens)["input_ids"]
+        if not context_ids:
+            raise ValueError("continuation_logprob needs a non-empty context")
+        continuation_ids = self.tokenizer(continuation, add_special_tokens=False)["input_ids"]
+        if not continuation_ids:
+            return 0.0, 0
+        ids = torch.tensor([context_ids + continuation_ids], device=self.model.device)
+        with torch.no_grad():
+            logits = self.model(input_ids=ids).logits[0]
+        start = len(context_ids) - 1
+        log_probs = torch.log_softmax(logits[start:-1].float(), dim=-1)
+        targets = torch.tensor(continuation_ids, device=log_probs.device).unsqueeze(-1)
+        return float(log_probs.gather(-1, targets).sum()), len(continuation_ids)
+
+    @synchronized
     def pooled_layer_means(
         self,
         texts: List[str],

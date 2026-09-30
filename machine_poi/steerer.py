@@ -715,25 +715,28 @@ class QuranSteerer:
         """Normalize a pooled direction and place it on the steering device."""
         return torch.nn.functional.normalize(vector, dim=-1).to(self.device)
 
-    def _recipe_parameters(self, recipe: str) -> Dict[str, str]:
+    def _recipe_parameters(self, recipe: str, control: str = "ar") -> Dict[str, str]:
         """Validate a vector recipe; centered recipes name their control set."""
         if recipe == "centered":
-            return {"neutral_sha256": texts_sha256(neutral_control_texts("ar"))}
+            return {
+                "control": control,
+                "neutral_sha256": texts_sha256(neutral_control_texts(control)),
+            }
         if recipe == "raw_mean":
             warnings.warn(
                 "recipe='raw_mean' keeps the component every hidden state shares, so "
                 "the direction is mostly generic model state rather than Quran "
                 "content; use recipe='centered' unless reproducing older results",
                 UserWarning,
-                stacklevel=3,
+                stacklevel=4,
             )
             return {}
         raise InvalidConfigError(f"Unknown recipe {recipe!r}; use 'centered' or 'raw_mean'")
 
-    def _neutral_control_means(self) -> Dict[int, torch.Tensor]:
-        """Mean pooled activation of the neutral Arabic control set per layer."""
-        texts = neutral_control_texts("ar")
-        logger.info(f"Computing the neutral control mean from {len(texts)} Arabic sentences...")
+    def _neutral_control_means(self, control: str = "ar") -> Dict[int, torch.Tensor]:
+        """Mean pooled activation of a neutral control set per layer."""
+        texts = neutral_control_texts(control)
+        logger.info(f"Computing the neutral control mean from {len(texts)} {control!r} sentences...")
         pooled = self._pooled_activations(texts)
         return {layer_idx: stacked.mean(dim=0) for layer_idx, stacked in pooled.items()}
 
@@ -794,6 +797,7 @@ class QuranSteerer:
         use_cached: bool = True,
         sample_size: Optional[int] = None,
         recipe: Literal["centered", "raw_mean"] = "centered",
+        control: Literal["ar", "en"] = "ar",
     ) -> Dict[int, torch.Tensor]:
         """
         Prepare steering vectors from Quran text using mean activations.
@@ -810,6 +814,8 @@ class QuranSteerer:
             use_cached: Whether to use cached vectors if available
             sample_size: Number of samples to use (default from config)
             recipe: "centered" (default) or "raw_mean"
+            control: Neutral control language for centering: "ar" (default,
+                language-matched) or "en" (the English set, for comparison)
 
         Returns:
             Dictionary mapping layer indices to steering vectors
@@ -822,7 +828,7 @@ class QuranSteerer:
 
         if type(sample_size) is not int or sample_size < 1:
             raise InvalidConfigError("Sample size must be a positive integer")
-        centering = self._recipe_parameters(recipe)
+        centering = self._recipe_parameters(recipe, control)
         metadata = self._cache_metadata("mean", recipe=recipe, **centering, chunk_by=chunk_by,
                                         sample_size=sample_size,
                                         seed=STEERING_DEFAULTS.random_seed)
@@ -843,9 +849,9 @@ class QuranSteerer:
 
         logger.info("Computing mean activations from Quran text...")
         pooled = self._pooled_activations(list(selected_texts))
-        control = self._neutral_control_means() if centering else None
+        control_means = self._neutral_control_means(control) if centering else None
         self.steering_vectors = {
-            layer_idx: self._direction(stacked.mean(dim=0), control, layer_idx)
+            layer_idx: self._direction(stacked.mean(dim=0), control_means, layer_idx)
             for layer_idx, stacked in pooled.items()
         }
 

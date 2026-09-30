@@ -1,0 +1,19 @@
+{
+ "name": "qwen2.5-0.5b_phase4",
+ "model": "qwen2.5-0.5b",
+ "embedding_model": "paraphrase-minilm",
+ "seed": 42,
+ "prompts": {"file": "experiments/eval_prompts.json", "split": "test"},
+ "decoding": {"max_new_tokens": 80},
+ "steering": {"layer_distribution": "bell", "sample_size": 50, "chunk_by": "verse"},
+ "conditions": [
+  {"name": "baseline"},
+  {"name": "raw_mean_r0.1", "recipe": "raw_mean", "dose_ratio": 0.1},
+  {"name": "centered_r0.05", "recipe": "centered", "dose_ratio": 0.05},
+  {"name": "centered_r0.1", "recipe": "centered", "dose_ratio": 0.1},
+  {"name": "centered_r0.2", "recipe": "centered", "dose_ratio": 0.2},
+  {"name": "centered_en_control_r0.1", "recipe": "centered", "control": "en", "dose_ratio": 0.1},
+  {"name": "rag_only", "rag": true},
+  {"name": "rag_centered_r0.1", "recipe": "centered", "dose_ratio": 0.1, "rag": true}
+ ]
+}

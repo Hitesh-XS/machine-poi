@@ -104,10 +104,13 @@ steering defaults off and requires an explicit trusted-corpus opt-in.
   had zero false blocks and one review request. The
   [report](evals/rogue_agent/results.json) evaluates already-proposed actions;
   it does not measure a model's resistance to prompt injection.
-- **Steering behavior:** the committed [model experiment report](experiments/results/README.md)
-  includes output collapse in small-model conditions and language/persona spillover
-  in the small Gemma samples. These results do not establish preserved general
-  capabilities, rogue-agent detection, or a universally safe coefficient.
+- **Steering behavior:** the [evaluation harness run](experiments/results/README.md)
+  on Qwen2.5-0.5B-Instruct (48 held-out English and Arabic prompts, 95% intervals)
+  found a trade-off: centered steering at ratio 0.05 left ARC-Easy accuracy
+  unchanged within its interval, 0.1 raised a religious register but cost 15
+  points of accuracy, and 0.2 degenerated 81% of outputs. Human relevance ratings
+  are pending. These results do not establish preserved general capabilities,
+  rogue-agent detection, or a universally safe dose.
 - **Pending deployment:** no live agent host or real external side effects were
   evaluated in the guardian implementation. Held-out model comparisons and host
   bypass/kill-switch drills remain acceptance gates.
@@ -120,6 +123,7 @@ steering defaults off and requires an explicit trusted-corpus opt-in.
 | [Guardian integration](docs/guardian_integration.md) | Runnable API example, grants, approvals, failures and host rollout |
 | [Steering guide](docs/steering_guide.md) | Python/CLI usage, model aliases, injection semantics and migration |
 | [Testing and evaluation](docs/testing.md) | Minimal and full test environments, evidence and experiment limits |
+| [Steering evaluation](docs/evaluation.md) | Evaluation harness spec, held-out prompts, metrics, rating rubric and provenance |
 | [Containment plan](docs/rogue_agent_containment_plan.md) | Baseline findings, delivered slices and remaining deployment gates |
 | [Research note](PAPER.md) | Implemented steering methods and the evidence supporting current claims |
 | [Workspace research roadmap](docs/global_workspace_improvement_plan.md) | Diagnostic work and experiments still planned |
@@ -137,6 +141,7 @@ steering defaults off and requires an explicit trusted-corpus opt-in.
 | `machine_poi/retrieval_context.py`, `machine_poi/steering_cache.py` | Quoted/bounded context and numeric steering caches |
 | `machine_poi/knowledge_base.py`, `machine_poi/hybrid_knowledge_base.py` | Vector and optional graph retrieval |
 | `machine_poi/workspace_diagnostics.py`, `machine_poi/transport_stats.py` | Activation/transport summaries and paired statistics |
+| `machine_poi/evaluation.py`, `experiments/steering_eval.py` | Evaluation metrics and the harness that produces reported steering results |
 | `machine_poi/cli.py`, `machine_poi/config.py`, `main.py` | Research CLI, model aliases and presets; `main.py` launches the CLI from a checkout |
 | `pyproject.toml`, `ci-constraints.txt` | Package metadata and extras; versions pinned in CI |
 | `experiments/` | Model experiments and historical results |
